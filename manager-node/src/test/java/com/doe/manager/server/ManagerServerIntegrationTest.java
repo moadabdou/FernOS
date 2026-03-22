@@ -146,6 +146,46 @@ class ManagerServerIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("HeartbeatMonitor evicts worker that stops sending heartbeats")
+    void deadWorkerIsDetectedAndRemoved() throws Exception {
+        // Start a custom server with short heartbeat intervals (100ms check, 300ms timeout)
+        ManagerServer customServer = new ManagerServer(0, 100, 300);
+        CountDownLatch serverReady = new CountDownLatch(1);
+        Thread customServerThread = Thread.ofVirtual().start(() -> {
+            try {
+                serverReady.countDown();
+                customServer.start();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        assertTrue(serverReady.await(5, TimeUnit.SECONDS), "Custom server failed to start");
+        Thread.sleep(100);
+
+        try {
+            Socket socket = new Socket("localhost", customServer.getLocalPort());
+            sendRegistration(socket, "dead-test-node");
+            UUID assignedId = readAssignedId(socket);
+
+            assertTrue(customServer.getRegistry().get(assignedId).isPresent(),
+                    "Worker should be registered initially");
+
+            // Sleep past the timeout (300ms + 200ms buffer) without sending heartbeats
+            // The socket remains open, simulating a frozen worker or network partition
+            Thread.sleep(500);
+
+            // The HeartbeatMonitor should have evicted the worker and closed the specific socket
+            assertTrue(customServer.getRegistry().isEmpty(),
+                    "Registry should be empty after heartbeat timeout");
+            
+            socket.close();
+        } finally {
+            customServer.shutdown();
+            customServerThread.join(2000);
+        }
+    }
+
     // ──── Helpers ───────────────────────────────────────────────────
 
     private void sendRegistration(Socket socket, String hostname) throws IOException {

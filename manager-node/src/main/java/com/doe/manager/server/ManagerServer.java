@@ -18,7 +18,11 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Central manager server that accepts worker TCP connections using Java 21 Virtual Threads.
@@ -35,20 +39,39 @@ public class ManagerServer {
 
     private final int port;
     private final WorkerRegistry registry;
+    private final long heartbeatCheckIntervalMs;
+    private final long heartbeatTimeoutMs;
 
     private volatile boolean running;
     private ServerSocket serverSocket;
+    private ScheduledExecutorService monitorExecutor;
 
     /**
-     * Creates a new ManagerServer.
+     * Creates a new ManagerServer with default heartbeat configuration.
      *
      * @param port the TCP port to bind to
      */
     public ManagerServer(int port) {
+        this(port, 5000, 15000);
+    }
+
+    /**
+     * Creates a new ManagerServer.
+     *
+     * @param port                     the TCP port to bind to
+     * @param heartbeatCheckIntervalMs how frequently to check for dead workers (in ms)
+     * @param heartbeatTimeoutMs       how long without a heartbeat before a worker is marked DEAD (in ms)
+     */
+    public ManagerServer(int port, long heartbeatCheckIntervalMs, long heartbeatTimeoutMs) {
         if (port < 0 || port > 65535) {
             throw new IllegalArgumentException("Port must be between 0 and 65535, got: " + port);
         }
+        if (heartbeatCheckIntervalMs <= 0 || heartbeatTimeoutMs <= 0) {
+            throw new IllegalArgumentException("Heartbeat intervals must be positive");
+        }
         this.port = port;
+        this.heartbeatCheckIntervalMs = heartbeatCheckIntervalMs;
+        this.heartbeatTimeoutMs = heartbeatTimeoutMs;
         this.registry = new WorkerRegistry();
     }
 
@@ -65,6 +88,8 @@ public class ManagerServer {
         running = true;
 
         LOG.info("ManagerServer started on port {}", serverSocket.getLocalPort());
+
+        startHeartbeatMonitor();
 
         while (running) {
             try {
@@ -188,11 +213,52 @@ public class ManagerServer {
     }
 
     /**
+     * Starts the scheduled HeartbeatMonitor task.
+     */
+    private void startHeartbeatMonitor() {
+        monitorExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread t = new Thread(runnable, "heartbeat-monitor");
+            t.setDaemon(true);
+            return t;
+        });
+
+        monitorExecutor.scheduleAtFixedRate(() -> {
+            try {
+                long now = Instant.now().toEpochMilli();
+                registry.getAll().values().forEach(worker -> {
+                    long elapsed = now - worker.getLastHeartbeat().toEpochMilli();
+                    if (elapsed > heartbeatTimeoutMs) {
+                        LOG.warn("Worker {} marked DEAD (no heartbeat for {} ms)", worker.getId(), elapsed);
+                        try {
+                            if (!worker.getSocket().isClosed()) {
+                                worker.getSocket().close();
+                            }
+                        } catch (IOException e) {
+                            LOG.warn("Error closing dead worker {} socket", worker.getId(), e);
+                        }
+                        // Remove from registry immediately to prevent relying on the handler thread's finally block
+                        registry.unregisterIfSame(worker.getId(), worker);
+                    }
+                });
+            } catch (Exception e) {
+                LOG.error("Unexpected error in heartbeat monitor", e);
+            }
+        }, heartbeatCheckIntervalMs, heartbeatCheckIntervalMs, TimeUnit.MILLISECONDS);
+        
+        LOG.info("HeartbeatMonitor started (interval: {} ms, timeout: {} ms)", 
+                heartbeatCheckIntervalMs, heartbeatTimeoutMs);
+    }
+
+    /**
      * Gracefully shuts down the server: closes the server socket and all worker connections.
      */
     public void shutdown() {
         LOG.info("Shutting down ManagerServer...");
         running = false;
+
+        if (monitorExecutor != null && !monitorExecutor.isShutdown()) {
+            monitorExecutor.shutdownNow();
+        }
 
         // Close the server socket to break the accept() loop
         try {

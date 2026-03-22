@@ -87,4 +87,11 @@ public class WorkerRegistry {
     public int size() {
         return workers.size();
     }
+
+    /**
+     * Returns {@code true} if the registry contains no workers.
+     */
+    public boolean isEmpty() {
+        return workers.isEmpty();
+    }
 }

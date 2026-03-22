@@ -19,6 +19,10 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
+
 
 /**
  * The Worker client: establishes a TCP connection to the Manager, registers itself,
@@ -44,25 +48,41 @@ public class WorkerClient {
 
     private final String host;
     private final int port;
+    private final long heartbeatIntervalMs;
 
     private volatile boolean running = true;
     private volatile Socket socket;
 
     /**
-     * Creates a new WorkerClient.
+     * Creates a new WorkerClient with default heartbeat interval (5000ms).
      *
      * @param host the manager hostname or IP address
      * @param port the manager TCP port
      */
     public WorkerClient(String host, int port) {
+        this(host, port, 5000);
+    }
+
+    /**
+     * Creates a new WorkerClient.
+     *
+     * @param host                the manager hostname or IP address
+     * @param port                the manager TCP port
+     * @param heartbeatIntervalMs heartbeat interval in milliseconds
+     */
+    public WorkerClient(String host, int port, long heartbeatIntervalMs) {
         if (host == null || host.isBlank()) {
             throw new IllegalArgumentException("host must not be blank");
         }
         if (port < 0 || port > 65535) {
             throw new IllegalArgumentException("port must be between 0 and 65535, got: " + port);
         }
+        if (heartbeatIntervalMs <= 0) {
+            throw new IllegalArgumentException("heartbeatIntervalMs must be positive, got: " + heartbeatIntervalMs);
+        }
         this.host = host;
         this.port = port;
+        this.heartbeatIntervalMs = heartbeatIntervalMs;
     }
 
     /**
@@ -108,9 +128,13 @@ public class WorkerClient {
             LOG.info("Connected to manager at {}", socket.getRemoteSocketAddress());
         });
 
+        Thread writerThread = null;
         try (Socket s = socket) {
             InputStream in = s.getInputStream();
             OutputStream out = s.getOutputStream();
+            
+            BlockingQueue<OutboundMessage> egressQueue = new LinkedBlockingQueue<>();
+            writerThread = Thread.ofVirtual().name("egress-writer").start(() -> runWriterLoop(s, out, egressQueue));
 
             // ── 2. Send REGISTER_WORKER ───────────────────────────────────────
             String hostname = resolveHostname();
@@ -119,8 +143,8 @@ public class WorkerClient {
 
             byte[] regBytes = ProtocolEncoder.encode(
                     MessageType.REGISTER_WORKER, GSON.toJson(regPayload));
-            out.write(regBytes);
-            out.flush();
+            
+            egressQueue.put(new OutboundMessage(regBytes, e -> LOG.error("Failed to send REGISTER_WORKER", e)));
 
             LOG.info("Sent REGISTER_WORKER (hostname: {})", hostname);
 
@@ -140,9 +164,14 @@ public class WorkerClient {
             UUID workerId = UUID.fromString(ackJson.get("workerId").getAsString());
             LOG.info("Registered with manager, assigned worker ID: {}", workerId);
 
+            Thread.ofVirtual().name("heartbeat-" + workerId).start(() -> runHeartbeatLoop(s, egressQueue, workerId));
+
             // ── 4. Main command loop ──────────────────────────────────────────
             runMainLoop(in, workerId);
         }finally {
+            if (writerThread != null) {
+                writerThread.interrupt();
+            }
             // to avoid calling close() twice by shutdown if socket was already closed by try-with-resources
             socket = null;
         }
@@ -181,6 +210,67 @@ public class WorkerClient {
             }
         }
     }
+
+    /**
+     * Dedicated writer thread loop. Consumes from the queue and writes to the socket.
+     * Prevents Virtual Thread pinning caused by using synchronized blocks on the output stream.
+     */
+    private void runWriterLoop(Socket s, OutputStream out, BlockingQueue<OutboundMessage> queue) {
+        LOG.debug("Worker egress writer started");
+        try {
+            while (running && !s.isClosed()) {
+                OutboundMessage msg = queue.take(); // Blocks until a message is available
+                try {
+                    out.write(msg.payload());
+                    out.flush();
+                } catch (IOException e) {
+                    if (running && !s.isClosed()) {
+                        if (msg.onFailure() != null) {
+                            msg.onFailure().accept(e);
+                        } else {
+                            LOG.error("Worker egress writer IO error", e);
+                        }
+                    }
+                    // If a socket IO exception happens, it's generally fatal for this connection,
+                    // but we rely on the main read loop or socket closure to actually break this cleanly.
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.debug("Worker egress writer interrupted and stopping");
+        }
+        LOG.debug("Worker egress writer stopped");
+    }
+
+    /**
+     * Periodically sends HEARTBEAT messages to the manager.
+     */
+    private void runHeartbeatLoop(Socket s, BlockingQueue<OutboundMessage> egressQueue, UUID workerId) {
+        LOG.info("Worker {}: starting heartbeat loop (interval: {} ms)", workerId, heartbeatIntervalMs);
+        byte[] heartbeatBytes = ProtocolEncoder.encode(MessageType.HEARTBEAT, new byte[0]);
+
+        while (running && !s.isClosed()) {
+            sleepQuietly(heartbeatIntervalMs);
+            if (!running || s.isClosed()) {
+                break;
+            }
+            try {
+                egressQueue.put(new OutboundMessage(heartbeatBytes, e -> 
+                        LOG.error("Worker {}: failed to send HEARTBEAT", workerId, e)
+                ));
+                LOG.debug("Worker {}: sent HEARTBEAT", workerId);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        LOG.info("Worker {}: heartbeat loop stopped", workerId);
+    }
+
+    /**
+     * Bundles a byte payload with an error callback.
+     */
+    private record OutboundMessage(byte[] payload, Consumer<IOException> onFailure) {}
 
     /**
      * Signals the client to stop and closes the current socket.
