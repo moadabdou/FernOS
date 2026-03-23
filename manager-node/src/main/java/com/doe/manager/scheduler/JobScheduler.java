@@ -6,6 +6,9 @@ import com.doe.core.model.WorkerConnection;
 import com.doe.core.protocol.MessageType;
 import com.doe.core.protocol.ProtocolEncoder;
 import com.doe.core.registry.WorkerRegistry;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +38,7 @@ public class JobScheduler {
 
     private static final Logger LOG = LoggerFactory.getLogger(JobScheduler.class);
     private static final long POLL_SLEEP_MS = 100;
+    private static final Gson GSON = new Gson();
 
     private final JobQueue queue;
     private final WorkerRegistry registry;
@@ -122,7 +126,14 @@ public class JobScheduler {
                 job.getId(), worker.getId(), queue.size());
 
         try {
-            byte[] wire = ProtocolEncoder.encode(MessageType.ASSIGN_JOB, job.getPayload());
+            // Build the ASSIGN_JOB envelope: { "jobId": "...", "payload": <original payload> }
+            // so the worker can echo jobId back in JOB_RUNNING and JOB_RESULT.
+            JsonObject envelope = new JsonObject();
+            envelope.addProperty("jobId", job.getId().toString());
+            // Embed the original payload as a nested JSON element (not a double-encoded string)
+            envelope.add("payload", JsonParser.parseString(job.getPayload()));
+
+            byte[] wire = ProtocolEncoder.encode(MessageType.ASSIGN_JOB, GSON.toJson(envelope));
             OutputStream out = worker.getSocket().getOutputStream();
             synchronized (out) {          // guard concurrent writes on the same socket
                 out.write(wire);

@@ -1,5 +1,7 @@
 package com.doe.manager.server;
 
+import com.doe.core.model.Job;
+import com.doe.core.model.JobStatus;
 import com.doe.core.model.WorkerConnection;
 import com.doe.core.protocol.Message;
 import com.doe.core.protocol.MessageType;
@@ -137,7 +139,23 @@ public class ManagerServer {
                         if (workerId != null) {
                             handleHeartbeat(workerId, localConnection);
                         } else {
-                            LOG.warn("Received HEARTBEAT from unregistered connection {}", 
+                            LOG.warn("Received HEARTBEAT from unregistered connection {}",
+                                    socket.getRemoteSocketAddress());
+                        }
+                    }
+                    case JOB_RUNNING -> {
+                        if (localConnection != null) {
+                            handleJobRunning(workerId, localConnection, message);
+                        } else {
+                            LOG.warn("Received JOB_RUNNING from unregistered connection {}",
+                                    socket.getRemoteSocketAddress());
+                        }
+                    }
+                    case JOB_RESULT -> {
+                        if (localConnection != null) {
+                            handleJobResult(workerId, localConnection, message);
+                        } else {
+                            LOG.warn("Received JOB_RESULT from unregistered connection {}",
                                     socket.getRemoteSocketAddress());
                         }
                     }
@@ -215,6 +233,58 @@ public class ManagerServer {
     private void handleHeartbeat(UUID workerId, WorkerConnection localConnection) {
         localConnection.updateHeartbeat();
         LOG.debug("Heartbeat received from Worker {}", workerId);
+    }
+
+    /**
+     * Processes a JOB_RUNNING message: transitions the current job ASSIGNED → RUNNING.
+     * <p>
+     * The manager receives this immediately after sending ASSIGN_JOB, confirming
+     * that the worker has started execution. This distinguishes "assigned but
+     * not yet started" from "actively executing".
+     */
+    private void handleJobRunning(UUID workerId, WorkerConnection localConnection, Message message) {
+        Job job = localConnection.getCurrentJob();
+        if (job == null) {
+            LOG.warn("Worker {}: received JOB_RUNNING but no current job tracked", workerId);
+            return;
+        }
+        try {
+            job.transition(JobStatus.RUNNING);
+            LOG.info("Worker {}: job {} transitioned ASSIGNED → RUNNING", workerId, job.getId());
+        } catch (IllegalStateException e) {
+            LOG.warn("Worker {}: could not transition job {} to RUNNING: {}", workerId, job.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Processes a JOB_RESULT message: records the output, transitions the job
+     * to COMPLETED or FAILED, and marks the worker IDLE again.
+     */
+    private void handleJobResult(UUID workerId, WorkerConnection localConnection, Message message) {
+        JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
+        String status = json.has("status") ? json.get("status").getAsString() : "FAILED";
+        String output = json.has("output") ? json.get("output").getAsString() : "";
+
+        Job job = localConnection.getCurrentJob();
+        if (job == null) {
+            LOG.warn("Worker {}: received JOB_RESULT but no current job tracked", workerId);
+            return;
+        }
+
+        job.setResult(output);
+        try {
+            JobStatus target = "COMPLETED".equals(status)
+                    ? JobStatus.COMPLETED
+                    : JobStatus.FAILED;
+            job.transition(target);
+            LOG.info("Worker {}: job {} → {} | output: {}", workerId, job.getId(), target, output);
+        } catch (IllegalStateException e) {
+            LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
+        } finally {
+            // Always free the worker so it can accept the next assignment
+            localConnection.setIdle();
+            LOG.info("Worker {}: marked IDLE after job {}", workerId, job.getId());
+        }
     }
 
     /**
