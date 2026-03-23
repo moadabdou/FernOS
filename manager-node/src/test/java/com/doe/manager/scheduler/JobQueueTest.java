@@ -16,7 +16,7 @@ class JobQueueTest {
 
     @BeforeEach
     void setUp() {
-        queue = new JobQueue();
+        queue = new JobQueue(null);
     }
 
     private Job makeJob(String payload) {

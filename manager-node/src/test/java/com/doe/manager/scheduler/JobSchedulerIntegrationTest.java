@@ -2,6 +2,7 @@ package com.doe.manager.scheduler;
 
 import com.doe.core.model.Job;
 import com.doe.core.model.JobStatus;
+import com.doe.core.model.WorkerStatus;
 import com.doe.core.protocol.Message;
 import com.doe.core.protocol.MessageType;
 import com.doe.core.protocol.ProtocolDecoder;
@@ -182,6 +183,85 @@ class JobSchedulerIntegrationTest {
 
             assertTrue(assigned.await(5, TimeUnit.SECONDS),
                     "Job should have been assigned once the worker became idle");
+
+        } finally {
+            for (Socket ws : workerSockets) {
+                try { ws.close(); } catch (IOException ignored) {}
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("3 jobs sequentially completed by 1 worker")
+    void threeJobs_oneWorker_processedSequentially() throws Exception {
+        List<Socket> workerSockets = new ArrayList<>();
+        CountDownLatch allCompleted = new CountDownLatch(3);
+
+        try {
+            // 1. Connect 1 worker
+            Socket ws = new Socket("localhost", server.getLocalPort());
+            ws.setSoTimeout(10_000);
+            workerSockets.add(ws);
+            UUID workerId = registerWorker(ws);
+            Thread.sleep(200);
+
+            // 2. Enqueue 3 jobs
+            JobQueue queue = server.getJobScheduler().getQueue();
+            List<Job> jobs = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                Job job = Job.newJob("{\"cmd\":\"seq-task-" + i + "\"}").build();
+                jobs.add(job);
+                queue.enqueue(job);
+            }
+
+            // 3. Worker reads ASSIGN_JOB, then replies with JOB_RESULT sequentially
+            Thread.ofVirtual().start(() -> {
+                try {
+                    InputStream in = ws.getInputStream();
+                    OutputStream out = ws.getOutputStream();
+                    for (int i = 0; i < 3; i++) {
+                        Message msg = ProtocolDecoder.decode(in);
+                        if (msg.type() == MessageType.ASSIGN_JOB) {
+                            JsonObject envelope = GSON.fromJson(msg.payloadAsString(), JsonObject.class);
+                            String jobId = envelope.get("jobId").getAsString();
+
+                            // Send JOB_RUNNING first
+                            JsonObject runningBody = new JsonObject();
+                            runningBody.addProperty("jobId", jobId);
+                            out.write(ProtocolEncoder.encode(MessageType.JOB_RUNNING, GSON.toJson(runningBody)));
+                            out.flush();
+
+                            // Simulate sending JOB_RESULT
+                            JsonObject resultBody = new JsonObject();
+                            resultBody.addProperty("status", "COMPLETED");
+                            resultBody.addProperty("output", "success-" + i);
+
+                            byte[] wire = ProtocolEncoder.encode(MessageType.JOB_RESULT, GSON.toJson(resultBody));
+                            out.write(wire);
+                            out.flush();
+
+                            allCompleted.countDown();
+                        }
+                    }
+                } catch (IOException ignored) {}
+            });
+
+            // 4. Wait for 3 jobs to complete
+            assertTrue(allCompleted.await(5, TimeUnit.SECONDS), "Expected 3 jobs to complete");
+
+            // Allow the manager a moment to process the final JOB_RESULT
+            Thread.sleep(200);
+
+            // 5. Verify all jobs are COMPLETED in registry and have correct output
+            for (int i = 0; i < 3; i++) {
+                Job job = server.getJobRegistry().get(jobs.get(i).getId()).orElseThrow();
+                assertEquals(JobStatus.COMPLETED, job.getStatus());
+                assertEquals("success-" + i, job.getResult());
+            }
+
+            // Verify worker is back to IDLE
+            assertEquals(WorkerStatus.IDLE,
+                    server.getRegistry().get(workerId).orElseThrow().getStatus());
 
         } finally {
             for (Socket ws : workerSockets) {

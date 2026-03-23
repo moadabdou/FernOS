@@ -1,6 +1,7 @@
 package com.doe.manager.scheduler;
 
 import com.doe.core.model.Job;
+import com.doe.core.registry.JobRegistry;
 
 import java.util.concurrent.ConcurrentLinkedDeque;
 
@@ -13,6 +14,16 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 public class JobQueue {
 
     private final ConcurrentLinkedDeque<Job> deque = new ConcurrentLinkedDeque<>();
+    private final JobRegistry registry;
+
+    /**
+     * Creates a new JobQueue.
+     *
+     * @param registry the registry to register jobs with; may be null in tests
+     */
+    public JobQueue(JobRegistry registry) {
+        this.registry = registry;
+    }
 
     /**
      * Adds a job to the tail of the queue.
@@ -21,6 +32,9 @@ public class JobQueue {
      */
     public void enqueue(Job job) {
         if (job == null) throw new NullPointerException("job must not be null");
+        if (registry != null) {
+            registry.register(job);
+        }
         deque.addLast(job);
     }
 

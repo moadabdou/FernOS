@@ -8,6 +8,7 @@ import com.doe.core.protocol.MessageType;
 import com.doe.core.protocol.ProtocolDecoder;
 import com.doe.core.protocol.ProtocolEncoder;
 import com.doe.core.registry.WorkerRegistry;
+import com.doe.core.registry.JobRegistry;
 import com.doe.manager.scheduler.JobQueue;
 import com.doe.manager.scheduler.JobScheduler;
 import com.google.gson.Gson;
@@ -43,6 +44,7 @@ public class ManagerServer {
 
     private final int port;
     private final WorkerRegistry registry;
+    private final JobRegistry jobRegistry;
     private final long heartbeatCheckIntervalMs;
     private final long heartbeatTimeoutMs;
     private final JobScheduler jobScheduler;
@@ -78,7 +80,8 @@ public class ManagerServer {
         this.heartbeatCheckIntervalMs = heartbeatCheckIntervalMs;
         this.heartbeatTimeoutMs = heartbeatTimeoutMs;
         this.registry = new WorkerRegistry();
-        this.jobScheduler = new JobScheduler(new JobQueue(), this.registry);
+        this.jobRegistry = new JobRegistry();
+        this.jobScheduler = new JobScheduler(new JobQueue(jobRegistry), this.registry);
     }
 
     /**
@@ -278,6 +281,10 @@ public class ManagerServer {
                     : JobStatus.FAILED;
             job.transition(target);
             LOG.info("Worker {}: job {} → {} | output: {}", workerId, job.getId(), target, output);
+
+            long durationMs = java.time.Duration.between(job.getCreatedAt(), job.getUpdatedAt()).toMillis();
+            LOG.info("Job {} {} by Worker {} in {}ms", job.getId(), target, workerId, durationMs);
+
         } catch (IllegalStateException e) {
             LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
         } finally {
@@ -370,6 +377,13 @@ public class ManagerServer {
      */
     public JobScheduler getJobScheduler() {
         return jobScheduler;
+    }
+
+    /**
+     * Returns the job registry (primarily for testing).
+     */
+    public JobRegistry getJobRegistry() {
+        return jobRegistry;
     }
 
     /**
