@@ -138,14 +138,14 @@ class JobStateMachineTest {
     }
 
     @Test
-    @DisplayName("RUNNING → PENDING throws IllegalStateException")
-    void transition_runningToPending_throws() {
+    @DisplayName("RUNNING → PENDING is valid (crash recovery or timeout)")
+    void transition_runningToPending_valid() {
         Job job = pendingJob();
         job.transition(JobStatus.ASSIGNED);
         job.transition(JobStatus.RUNNING);
-
-        assertThrows(IllegalStateException.class,
-                () -> job.transition(JobStatus.PENDING));
+        
+        job.transition(JobStatus.PENDING);
+        assertEquals(JobStatus.PENDING, job.getStatus());
     }
 
     @Test

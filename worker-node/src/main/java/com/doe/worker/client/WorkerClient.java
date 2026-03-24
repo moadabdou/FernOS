@@ -227,8 +227,9 @@ public class WorkerClient {
         JsonObject envelope = GSON.fromJson(message.payloadAsString(), JsonObject.class);
         String jobId = envelope.has("jobId") ? envelope.get("jobId").getAsString() : "unknown";
         String payloadJson = envelope.has("payload") ? GSON.toJson(envelope.get("payload")) : "{}";
+        long timeoutMs = envelope.has("timeoutMs") ? envelope.get("timeoutMs").getAsLong() : 60000;
 
-        LOG.info("Worker {}: received ASSIGN_JOB — jobId={}", workerId, jobId);
+        LOG.info("Worker {}: received ASSIGN_JOB — jobId={}, timeoutMs={}", workerId, jobId, timeoutMs);
 
         // ── 1. Notify manager that we are now executing ───────────────────────
         try {
@@ -257,7 +258,7 @@ public class WorkerClient {
                             throw new CompletionException(ex);
                         }
                     })
-                    .orTimeout(60, TimeUnit.SECONDS)
+                    .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                     .join();
             status = "COMPLETED";
             output = result;

@@ -62,4 +62,14 @@ public class JobRegistry {
     public int size() {
         return jobs.size();
     }
+
+    /**
+     * Returns a list of jobs currently assigned to the given workerId.
+     */
+    public java.util.List<Job> findByWorker(UUID workerId) {
+        if (workerId == null) return Collections.emptyList();
+        return jobs.values().stream()
+                .filter(job -> workerId.equals(job.getAssignedWorkerId()))
+                .toList();
+    }
 }

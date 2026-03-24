@@ -9,8 +9,11 @@ import com.doe.core.protocol.ProtocolDecoder;
 import com.doe.core.protocol.ProtocolEncoder;
 import com.doe.core.registry.WorkerRegistry;
 import com.doe.core.registry.JobRegistry;
+import com.doe.core.registry.WorkerDeathListener;
+import com.doe.manager.scheduler.CrashRecoveryHandler;
 import com.doe.manager.scheduler.JobQueue;
 import com.doe.manager.scheduler.JobScheduler;
+import com.doe.manager.scheduler.JobTimeoutMonitor;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
@@ -25,6 +28,8 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +53,8 @@ public class ManagerServer {
     private final long heartbeatCheckIntervalMs;
     private final long heartbeatTimeoutMs;
     private final JobScheduler jobScheduler;
+    private final JobTimeoutMonitor jobTimeoutMonitor;
+    private final List<WorkerDeathListener> workerDeathListeners = new CopyOnWriteArrayList<>();
 
     private volatile boolean running;
     private ServerSocket serverSocket;
@@ -82,6 +89,10 @@ public class ManagerServer {
         this.registry = new WorkerRegistry();
         this.jobRegistry = new JobRegistry();
         this.jobScheduler = new JobScheduler(new JobQueue(jobRegistry), this.registry);
+        
+        CrashRecoveryHandler recoveryHandler = new CrashRecoveryHandler(jobRegistry, this.jobScheduler.getQueue());
+        addWorkerDeathListener(recoveryHandler);
+        this.jobTimeoutMonitor = new JobTimeoutMonitor(jobRegistry, recoveryHandler);
     }
 
     /**
@@ -99,6 +110,7 @@ public class ManagerServer {
         LOG.info("ManagerServer started on port {}", serverSocket.getLocalPort());
 
         startHeartbeatMonitor();
+        jobTimeoutMonitor.start();
         jobScheduler.start();
 
         while (running) {
@@ -180,6 +192,8 @@ public class ManagerServer {
                 boolean removed = registry.unregisterIfSame(workerId, localConnection);
                 if (removed) {
                     LOG.info("Worker {} removed from registry", workerId);
+                    UUID finalId = workerId;
+                    workerDeathListeners.forEach(l -> l.onWorkerDeath(finalId));
                 } else {
                     LOG.debug("Worker {} was already {}", workerId, registry.get(workerId).isPresent() ? "replaced by a newer connection; skipping removal" : "removed by another thread; skipping removal");
                 }
@@ -251,6 +265,10 @@ public class ManagerServer {
             LOG.warn("Worker {}: received JOB_RUNNING but no current job tracked", workerId);
             return;
         }
+        if (!workerId.equals(job.getAssignedWorkerId())) {
+            LOG.warn("Worker {}: ignored JOB_RUNNING for job {} (no longer assigned to this worker)", workerId, job.getId());
+            return;
+        }
         try {
             job.transition(JobStatus.RUNNING);
             LOG.info("Worker {}: job {} transitioned ASSIGNED → RUNNING", workerId, job.getId());
@@ -271,6 +289,12 @@ public class ManagerServer {
         Job job = localConnection.getCurrentJob();
         if (job == null) {
             LOG.warn("Worker {}: received JOB_RESULT but no current job tracked", workerId);
+            return;
+        }
+
+        if (!workerId.equals(job.getAssignedWorkerId())) {
+            LOG.warn("Worker {}: ignored JOB_RESULT for job {} (no longer assigned to this worker)", workerId, job.getId());
+            localConnection.setIdle();
             return;
         }
 
@@ -320,6 +344,9 @@ public class ManagerServer {
                         }
                         // Remove from registry immediately to prevent relying on the handler thread's finally block
                         registry.unregisterIfSame(worker.getId(), worker);
+                        
+                        // Notify listeners (e.g., CrashRecoveryHandler)
+                        workerDeathListeners.forEach(l -> l.onWorkerDeath(worker.getId()));
                     }
                 });
             } catch (Exception e) {
@@ -338,6 +365,7 @@ public class ManagerServer {
         LOG.info("Shutting down ManagerServer...");
         running = false;
 
+        jobTimeoutMonitor.stop();
         jobScheduler.stop();
 
         if (monitorExecutor != null && !monitorExecutor.isShutdown()) {
@@ -363,6 +391,15 @@ public class ManagerServer {
         });
 
         LOG.info("ManagerServer shut down. Final registry size: {}", registry.size());
+    }
+
+    /**
+     * Registers a listener to be notified when a worker dies.
+     */
+    public void addWorkerDeathListener(WorkerDeathListener listener) {
+        if (listener != null) {
+            workerDeathListeners.add(listener);
+        }
     }
 
     /**

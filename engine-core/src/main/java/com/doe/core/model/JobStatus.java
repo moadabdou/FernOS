@@ -33,7 +33,7 @@ public enum JobStatus {
     RUNNING {
         @Override
         public Set<JobStatus> validTransitions() {
-            return EnumSet.of(COMPLETED, FAILED);
+            return EnumSet.of(COMPLETED, FAILED, PENDING);
         }
     },
 
