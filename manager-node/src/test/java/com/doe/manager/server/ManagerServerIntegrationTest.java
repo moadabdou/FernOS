@@ -40,17 +40,13 @@ class ManagerServerIntegrationTest {
 
     @BeforeEach
     void startServer() throws Exception {
-        server = new ManagerServer(0);
+        server = TestManagerServerBuilder.build(0);
 
         CountDownLatch serverReady = new CountDownLatch(1);
 
         serverThread = Thread.ofVirtual().start(() -> {
-            try {
-                serverReady.countDown();
-                server.start();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            serverReady.countDown();
+            server.start();
         });
 
         assertTrue(serverReady.await(5, TimeUnit.SECONDS), "Server failed to start");
@@ -150,15 +146,11 @@ class ManagerServerIntegrationTest {
     @DisplayName("HeartbeatMonitor evicts worker that stops sending heartbeats")
     void deadWorkerIsDetectedAndRemoved() throws Exception {
         // Start a custom server with short heartbeat intervals (100ms check, 300ms timeout)
-        ManagerServer customServer = new ManagerServer(0, 100, 300);
+        ManagerServer customServer = TestManagerServerBuilder.build(0, 100, 300);
         CountDownLatch serverReady = new CountDownLatch(1);
         Thread customServerThread = Thread.ofVirtual().start(() -> {
-            try {
-                serverReady.countDown();
-                customServer.start();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            serverReady.countDown();
+            customServer.start();
         });
         assertTrue(serverReady.await(5, TimeUnit.SECONDS), "Custom server failed to start");
         Thread.sleep(100);

@@ -34,6 +34,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.SmartLifecycle;
+import org.springframework.stereotype.Service;
+
 /**
  * Central manager server that accepts worker TCP connections using Java 21 Virtual Threads.
  * <p>
@@ -42,7 +47,8 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Wire protocol: {@code [1B Type][4B Length][NB Payload]}
  */
-public class ManagerServer {
+@Service
+public class ManagerServer implements SmartLifecycle {
 
     private static final Logger LOG = LoggerFactory.getLogger(ManagerServer.class);
     private static final Gson GSON = new Gson();
@@ -61,58 +67,64 @@ public class ManagerServer {
     private ScheduledExecutorService monitorExecutor;
 
     /**
-     * Creates a new ManagerServer with default heartbeat configuration.
-     *
-     * @param port the TCP port to bind to
+     * Creates a new ManagerServer using Spring constructor injection.
      */
-    public ManagerServer(int port) {
-        this(port, 5000, 15000);
-    }
-
-    /**
-     * Creates a new ManagerServer.
-     *
-     * @param port                     the TCP port to bind to
-     * @param heartbeatCheckIntervalMs how frequently to check for dead workers (in ms)
-     * @param heartbeatTimeoutMs       how long without a heartbeat before a worker is marked DEAD (in ms)
-     */
-    public ManagerServer(int port, long heartbeatCheckIntervalMs, long heartbeatTimeoutMs) {
+    @Autowired
+    public ManagerServer(
+            @Value("${server.tcp.port:9090}") int port,
+            @Value("${fernos.heartbeat.check.interval:5000}") long heartbeatCheckIntervalMs,
+            @Value("${fernos.heartbeat.timeout:15000}") long heartbeatTimeoutMs,
+            WorkerRegistry registry,
+            JobRegistry jobRegistry,
+            JobScheduler jobScheduler,
+            JobTimeoutMonitor jobTimeoutMonitor,
+            List<WorkerDeathListener> workerDeathListeners) {
+            
         if (port < 0 || port > 65535) {
             throw new IllegalArgumentException("Port must be between 0 and 65535, got: " + port);
         }
         if (heartbeatCheckIntervalMs <= 0 || heartbeatTimeoutMs <= 0) {
             throw new IllegalArgumentException("Heartbeat intervals must be positive");
         }
+        
         this.port = port;
         this.heartbeatCheckIntervalMs = heartbeatCheckIntervalMs;
         this.heartbeatTimeoutMs = heartbeatTimeoutMs;
-        this.registry = new WorkerRegistry();
-        this.jobRegistry = new JobRegistry();
-        this.jobScheduler = new JobScheduler(new JobQueue(jobRegistry), this.registry);
+        this.registry = registry;
+        this.jobRegistry = jobRegistry;
+        this.jobScheduler = jobScheduler;
+        this.jobTimeoutMonitor = jobTimeoutMonitor;
         
-        CrashRecoveryHandler recoveryHandler = new CrashRecoveryHandler(jobRegistry, this.jobScheduler.getQueue());
-        addWorkerDeathListener(recoveryHandler);
-        this.jobTimeoutMonitor = new JobTimeoutMonitor(jobRegistry, recoveryHandler);
+        if (workerDeathListeners != null) {
+            this.workerDeathListeners.addAll(workerDeathListeners);
+        }
     }
 
     /**
-     * Starts the server, binding to the configured port and entering the accept loop.
-     * <p>
-     * This method blocks until {@link #shutdown()} is called or an error occurs.
-     *
-     * @throws IOException if the server socket cannot be bound
+     * Starts the server, binding to the configured port and starting the accept loop
+     * in a separate virtual thread. Implements SmartLifecycle.
      */
-    public void start() throws IOException {
-        serverSocket = new ServerSocket(port);
-        serverSocket.setReuseAddress(true);
-        running = true;
+    @Override
+    public void start() {
+        try {
+            serverSocket = new ServerSocket(port);
+            serverSocket.setReuseAddress(true);
+            running = true;
 
-        LOG.info("ManagerServer started on port {}", serverSocket.getLocalPort());
+            LOG.info("ManagerServer started on TCP port {}", serverSocket.getLocalPort());
 
-        startHeartbeatMonitor();
-        jobTimeoutMonitor.start();
-        jobScheduler.start();
-
+            startHeartbeatMonitor();
+            jobTimeoutMonitor.start();
+            jobScheduler.start();
+            
+            Thread.ofVirtual().name("manager-acceptor").start(this::acceptLoop);
+        } catch (IOException e) {
+            LOG.error("Failed to start ManagerServer", e);
+            throw new RuntimeException("Failed to start ManagerServer", e);
+        }
+    }
+    
+    private void acceptLoop() {
         while (running) {
             try {
                 Socket clientSocket = serverSocket.accept();
@@ -124,6 +136,10 @@ public class ManagerServer {
                     LOG.error("Error accepting connection", e);
                 }
                 // If !running, this is expected from shutdown() closing the ServerSocket
+            } catch (IOException e) {
+                if (running) {
+                    LOG.error("I/O error accepting connection", e);
+                }
             }
         }
     }
@@ -343,10 +359,15 @@ public class ManagerServer {
                             LOG.warn("Error closing dead worker {} socket", worker.getId(), e);
                         }
                         // Remove from registry immediately to prevent relying on the handler thread's finally block
-                        registry.unregisterIfSame(worker.getId(), worker);
-                        
-                        // Notify listeners (e.g., CrashRecoveryHandler)
-                        workerDeathListeners.forEach(l -> l.onWorkerDeath(worker.getId()));
+                        boolean removed = registry.unregisterIfSame(worker.getId(), worker);
+
+                        if (removed) {
+                            // Notify listeners (e.g., CrashRecoveryHandler)
+                            LOG.info("Worker {} removed from registry", worker.getId());
+                            workerDeathListeners.forEach(l -> l.onWorkerDeath(worker.getId()));
+                        } else {
+                            LOG.warn("Worker {} was already removed from registry", worker.getId());
+                        }
                     }
                 });
             } catch (Exception e) {
@@ -356,6 +377,11 @@ public class ManagerServer {
         
         LOG.info("HeartbeatMonitor started (interval: {} ms, timeout: {} ms)", 
                 heartbeatCheckIntervalMs, heartbeatTimeoutMs);
+    }
+
+    @Override
+    public void stop() {
+        shutdown();
     }
 
     /**

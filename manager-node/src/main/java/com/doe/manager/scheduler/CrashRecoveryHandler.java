@@ -8,6 +8,8 @@ import com.doe.core.registry.WorkerDeathListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.stereotype.Component;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -15,6 +17,7 @@ import java.util.UUID;
  * Recovers jobs that were assigned to a worker that died or disconnected.
  * Implements {@link WorkerDeathListener} to receive callbacks from the {@link com.doe.manager.server.ManagerServer}.
  */
+@Component
 public class CrashRecoveryHandler implements WorkerDeathListener {
 
     private static final Logger LOG = LoggerFactory.getLogger(CrashRecoveryHandler.class);

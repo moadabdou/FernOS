@@ -5,12 +5,15 @@ import com.doe.core.registry.JobRegistry;
 
 import java.util.concurrent.ConcurrentLinkedDeque;
 
+import org.springframework.stereotype.Component;
+
 /**
  * Thread-safe FIFO job queue backed by a {@link ConcurrentLinkedDeque}.
  * <p>
  * The deque is used (rather than {@code ConcurrentLinkedQueue}) to support
  * efficient head-insertion when re-queuing a job that could not be assigned.
  */
+@Component
 public class JobQueue {
 
     private final ConcurrentLinkedDeque<Job> deque = new ConcurrentLinkedDeque<>();

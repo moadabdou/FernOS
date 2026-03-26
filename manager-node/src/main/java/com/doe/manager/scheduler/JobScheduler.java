@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 
+import org.springframework.stereotype.Component;
+
 /**
  * Continuously polls the {@link JobQueue} and assigns pending jobs to idle workers.
  * <p>
@@ -34,6 +36,7 @@ import java.io.OutputStream;
  * }
  * </pre>
  */
+@Component
 public class JobScheduler {
 
     private static final Logger LOG = LoggerFactory.getLogger(JobScheduler.class);

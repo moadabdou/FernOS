@@ -33,15 +33,11 @@ class JobExecutionIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         // Use short heartbeat to avoid false positives during execution
-        server = new ManagerServer(0, 2000, 10_000);
+        server = TestManagerServerBuilder.build(0, 2000, 10_000);
         CountDownLatch serverReady = new CountDownLatch(1);
         serverThread = Thread.ofVirtual().start(() -> {
-            try {
-                serverReady.countDown();
-                server.start();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            serverReady.countDown();
+            server.start();
         });
         assertTrue(serverReady.await(5, TimeUnit.SECONDS), "Server failed to start");
         Thread.sleep(100); // let accept loop open

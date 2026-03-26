@@ -41,16 +41,12 @@ class JobSchedulerIntegrationTest {
 
     @BeforeEach
     void startServer() throws Exception {
-        server = new ManagerServer(0);
+        server = com.doe.manager.server.TestManagerServerBuilder.build(0);
 
         CountDownLatch ready = new CountDownLatch(1);
         serverThread = Thread.ofVirtual().start(() -> {
-            try {
-                ready.countDown();
-                server.start();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            ready.countDown();
+            server.start();
         });
 
         assertTrue(ready.await(5, TimeUnit.SECONDS), "Server failed to start");
