@@ -2,6 +2,8 @@ package com.doe.manager.persistence.repository;
 
 import com.doe.core.model.JobStatus;
 import com.doe.manager.persistence.entity.JobEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -25,4 +27,13 @@ public interface JobRepository extends JpaRepository<JobEntity, UUID> {
      * @return list of matching jobs ordered by default
      */
     List<JobEntity> findByStatus(JobStatus status);
+
+    /**
+     * Finds all jobs with the given status, with pagination support.
+     *
+     * @param status the status to filter by
+     * @param pageable pagination information
+     * @return a page of matching jobs
+     */
+    Page<JobEntity> findByStatus(JobStatus status, Pageable pageable);
 }

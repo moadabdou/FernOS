@@ -32,7 +32,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Service;
@@ -67,7 +66,6 @@ public class ManagerServer implements SmartLifecycle {
     /**
      * Creates a new ManagerServer using Spring constructor injection.
      */
-    @Autowired
     public ManagerServer(
             @Value("${server.tcp.port:9090}") int port,
             @Value("${fernos.heartbeat.check.interval:5000}") long heartbeatCheckIntervalMs,
