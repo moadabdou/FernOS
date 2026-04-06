@@ -424,4 +424,138 @@ class WorkerClientIntegrationTest {
                     "Client should have aggressively disconnected and reconnected after consecutive timeouts");
         }
     }
+
+    // ──── Bash plugin integration ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("ASSIGN_JOB with 'bash' type returns COMPLETED JOB_RESULT with script output")
+    void mainLoop_bashJob_completedWithOutput() throws Exception {
+        UUID assignedId = UUID.randomUUID();
+        CountDownLatch resultReceived = new CountDownLatch(1);
+        AtomicReference<JsonObject> capturedResult = new AtomicReference<>();
+
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            int port = serverSocket.getLocalPort();
+
+            Thread.ofVirtual().start(() -> {
+                try (Socket conn = serverSocket.accept()) {
+                    conn.setSoTimeout(SERVER_TIMEOUT_MS);
+                    InputStream in = conn.getInputStream();
+                    OutputStream out = conn.getOutputStream();
+
+                    ProtocolDecoder.decode(in); // consume REGISTER_WORKER
+
+                    // Send valid ACK
+                    JsonObject ack = new JsonObject();
+                    ack.addProperty("workerId", assignedId.toString());
+                    ack.addProperty("status", "registered");
+                    out.write(ProtocolEncoder.encode(MessageType.REGISTER_ACK, GSON.toJson(ack)));
+                    out.flush();
+
+                    // Send ASSIGN_JOB with a bash payload
+                    JsonObject jobPayload = new JsonObject();
+                    jobPayload.addProperty("type", "bash");
+                    jobPayload.addProperty("script", "echo integration-ok");
+                    jobPayload.addProperty("timeoutMs", 5000);
+
+                    JsonObject job = new JsonObject();
+                    job.addProperty("jobId", "bash-job-1");
+                    job.add("payload", jobPayload);
+                    job.addProperty("timeoutMs", 10000);
+
+                    out.write(ProtocolEncoder.encode(MessageType.ASSIGN_JOB, GSON.toJson(job)));
+                    out.flush();
+
+                    // Read messages until we get JOB_RESULT (skip JOB_RUNNING / HEARTBEATs)
+                    while (true) {
+                        var msg = ProtocolDecoder.decode(in);
+                        if (msg.type() == MessageType.JOB_RESULT) {
+                            capturedResult.set(GSON.fromJson(msg.payloadAsString(), JsonObject.class));
+                            resultReceived.countDown();
+                            break;
+                        }
+                    }
+
+                    Thread.sleep(1_000); // keep connection open while client processes
+                } catch (Exception ignored) {}
+            });
+
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
+            clientThread = Thread.ofVirtual().start(client::start);
+
+            assertTrue(resultReceived.await(10, TimeUnit.SECONDS),
+                    "JOB_RESULT should be received within 10 seconds");
+
+            JsonObject result = capturedResult.get();
+            assertNotNull(result, "JOB_RESULT payload must not be null");
+            assertEquals("COMPLETED", result.get("status").getAsString(),
+                    "Job status should be COMPLETED");
+            assertTrue(result.get("output").getAsString().contains("integration-ok"),
+                    "Output should contain 'integration-ok', got: " + result.get("output"));
+        }
+    }
+
+    @Test
+    @DisplayName("ASSIGN_JOB with unknown task type returns FAILED JOB_RESULT")
+    void mainLoop_unknownTaskType_failedResult() throws Exception {
+        UUID assignedId = UUID.randomUUID();
+        CountDownLatch resultReceived = new CountDownLatch(1);
+        AtomicReference<JsonObject> capturedResult = new AtomicReference<>();
+
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            int port = serverSocket.getLocalPort();
+
+            Thread.ofVirtual().start(() -> {
+                try (Socket conn = serverSocket.accept()) {
+                    conn.setSoTimeout(SERVER_TIMEOUT_MS);
+                    InputStream in = conn.getInputStream();
+                    OutputStream out = conn.getOutputStream();
+
+                    ProtocolDecoder.decode(in); // consume REGISTER_WORKER
+
+                    JsonObject ack = new JsonObject();
+                    ack.addProperty("workerId", assignedId.toString());
+                    ack.addProperty("status", "registered");
+                    out.write(ProtocolEncoder.encode(MessageType.REGISTER_ACK, GSON.toJson(ack)));
+                    out.flush();
+
+                    JsonObject jobPayload = new JsonObject();
+                    jobPayload.addProperty("type", "this-type-does-not-exist");
+
+                    JsonObject job = new JsonObject();
+                    job.addProperty("jobId", "unknown-job-1");
+                    job.add("payload", jobPayload);
+                    job.addProperty("timeoutMs", 5000);
+
+                    out.write(ProtocolEncoder.encode(MessageType.ASSIGN_JOB, GSON.toJson(job)));
+                    out.flush();
+
+                    while (true) {
+                        var msg = ProtocolDecoder.decode(in);
+                        if (msg.type() == MessageType.JOB_RESULT) {
+                            capturedResult.set(GSON.fromJson(msg.payloadAsString(), JsonObject.class));
+                            resultReceived.countDown();
+                            break;
+                        }
+                    }
+
+                    Thread.sleep(1_000);
+                } catch (Exception ignored) {}
+            });
+
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
+            clientThread = Thread.ofVirtual().start(client::start);
+
+            assertTrue(resultReceived.await(10, TimeUnit.SECONDS),
+                    "JOB_RESULT should be received within 10 seconds");
+
+            JsonObject result = capturedResult.get();
+            assertNotNull(result);
+            assertEquals("FAILED", result.get("status").getAsString(),
+                    "Job status should be FAILED for unknown type");
+            assertTrue(result.get("output").getAsString().contains("this-type-does-not-exist"),
+                    "Error output should mention the unknown type");
+        }
+    }
 }
+
