@@ -10,7 +10,12 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 
 /**
  * End-to-end Chaos integration test for Issue #010 — Worker Crash Recovery.
@@ -40,8 +45,13 @@ class CrashRecoveryIntegrationTest {
         Thread.sleep(100); // let accept loop open
 
         // Start 3 workers
+        String secret = "3c34e62a26514757c2c159851f50a80d46dddc7fa0a06df5c689f928e4e9b94z";
         for (int i = 0; i < 3; i++) {
-            WorkerClient worker = new WorkerClient("localhost", server.getLocalPort(), 1000);
+            String token = Jwts.builder()
+                    .subject(UUID.randomUUID().toString())
+                    .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)))
+                    .compact();
+            WorkerClient worker = new WorkerClient("localhost", server.getLocalPort(), 1000, 10000, token);
             workers.add(worker);
             Thread workerThread = Thread.ofVirtual().start(worker::start);
             workerThreads.add(workerThread);

@@ -91,7 +91,7 @@ class WorkerClientIntegrationTest {
             });
 
             // ── Start client ──────────────────────────────────────────────────
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(client::start);
 
             assertTrue(registered.await(5, TimeUnit.SECONDS),
@@ -125,7 +125,7 @@ class WorkerClientIntegrationTest {
                 } catch (Exception ignored) {}
             });
 
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(client::start);
 
             assertTrue(done.await(5, TimeUnit.SECONDS));
@@ -134,6 +134,8 @@ class WorkerClientIntegrationTest {
             assertNotNull(payload, "Payload must not be null");
             assertTrue(payload.has("hostname"),
                     "REGISTER_WORKER must include 'hostname'");
+            assertTrue(payload.has("auth_token"),
+                    "REGISTER_WORKER must include 'auth_token'");
             assertFalse(payload.has("workerId"),
                     "REGISTER_WORKER must NOT include 'workerId' (manager assigns it)");
         }
@@ -166,7 +168,7 @@ class WorkerClientIntegrationTest {
                 } catch (Exception ignored) {}
             });
 
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(() -> {
                 client.start();
                 clientStopped.countDown();
@@ -205,7 +207,7 @@ class WorkerClientIntegrationTest {
                 } catch (Exception ignored) {}
             });
 
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(() -> {
                 client.start();
                 clientStopped.countDown();
@@ -234,7 +236,7 @@ class WorkerClientIntegrationTest {
             int port = serverSocket.getLocalPort();
 
             // ── Start client first so it connects once the stub accepts ───────
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(() -> {
                 client.start();
                 clientExited.countDown();
@@ -314,7 +316,7 @@ class WorkerClientIntegrationTest {
                 } catch (Exception ignored) {}
             });
 
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(client::start);
 
             assertTrue(jobReceived.await(5, TimeUnit.SECONDS),
@@ -357,7 +359,7 @@ class WorkerClientIntegrationTest {
                 } catch (Exception ignored) {}
             });
 
-            client = new WorkerClient("localhost", port);
+            client = new WorkerClient("localhost", port, 5000, 10000, "test-token");
             clientThread = Thread.ofVirtual().start(client::start);
 
             assertTrue(inLoop.await(5, TimeUnit.SECONDS),
@@ -415,7 +417,7 @@ class WorkerClientIntegrationTest {
             });
 
             // Set very short readTimeoutMs for the test (100ms)
-            client = new WorkerClient("localhost", port, 5000, 100);
+            client = new WorkerClient("localhost", port, 5000, 100, "test-token");
             clientThread = Thread.ofVirtual().start(client::start);
 
             assertTrue(reconnected.await(5, TimeUnit.SECONDS),

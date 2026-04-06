@@ -62,7 +62,13 @@ class JobSchedulerIntegrationTest {
     // ──── Helpers ────────────────────────────────────────────────────────────
 
     private UUID registerWorker(Socket socket) throws IOException {
-        String json = "{\"hostname\":\"test-worker\"}";
+        String secret = "3c34e62a26514757c2c159851f50a80d46dddc7fa0a06df5c689f928e4e9b94z";
+        String token = io.jsonwebtoken.Jwts.builder()
+                .subject(UUID.randomUUID().toString())
+                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .compact();
+
+        String json = "{\"hostname\":\"test-worker\", \"auth_token\":\"" + token + "\"}";
         OutputStream out = socket.getOutputStream();
         out.write(ProtocolEncoder.encode(MessageType.REGISTER_WORKER, json.getBytes(StandardCharsets.UTF_8)));
         out.flush();

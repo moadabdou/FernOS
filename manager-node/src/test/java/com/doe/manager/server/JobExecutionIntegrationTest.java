@@ -5,9 +5,14 @@ import com.doe.core.model.JobStatus;
 import com.doe.worker.client.WorkerClient;
 import org.junit.jupiter.api.*;
 
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -40,7 +45,12 @@ class JobExecutionIntegrationTest {
         assertTrue(serverReady.await(5, TimeUnit.SECONDS), "Server failed to start");
         Thread.sleep(100); // let accept loop open
 
-        worker = new WorkerClient("localhost", server.getLocalPort(), 3000);
+        String secret = "3c34e62a26514757c2c159851f50a80d46dddc7fa0a06df5c689f928e4e9b94z";
+        String token = Jwts.builder()
+                .subject(UUID.randomUUID().toString())
+                .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+        worker = new WorkerClient("localhost", server.getLocalPort(), 3000, 10000, token);
         workerThread = Thread.ofVirtual().start(worker::start);
 
         // Wait until the worker registers (registry has 1 entry)

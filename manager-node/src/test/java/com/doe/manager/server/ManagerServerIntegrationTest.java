@@ -8,6 +8,9 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.*;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -70,8 +73,11 @@ class ManagerServerIntegrationTest {
                 Socket socket = new Socket("localhost", server.getLocalPort());
                 clients.add(socket);
 
-                sendRegistration(socket, "test-node-" + i);
+                UUID presetId = UUID.randomUUID();
+                String token = generateToken(presetId);
+                sendRegistration(socket, "test-node-" + i, token);
                 UUID assignedId = readAssignedId(socket);
+                assertEquals(presetId, assignedId, "Worker ID should match the JWT subject");
                 assignedIds.add(assignedId);
             }
 
@@ -99,7 +105,8 @@ class ManagerServerIntegrationTest {
     @DisplayName("Heartbeat updates lastHeartbeat timestamp")
     void heartbeatUpdatesTimestamp() throws Exception {
         try (Socket socket = new Socket("localhost", server.getLocalPort())) {
-            sendRegistration(socket, "heartbeat-test-node");
+            UUID presetId = UUID.randomUUID();
+            sendRegistration(socket, "heartbeat-test-node", generateToken(presetId));
             UUID assignedId = readAssignedId(socket);
 
             Thread.sleep(200);
@@ -125,7 +132,8 @@ class ManagerServerIntegrationTest {
     @DisplayName("Server assigns UUID and responds with ACK")
     void registrationAck() throws Exception {
         try (Socket socket = new Socket("localhost", server.getLocalPort())) {
-            sendRegistration(socket, "ack-test-node");
+            UUID presetId = UUID.randomUUID();
+            sendRegistration(socket, "ack-test-node", generateToken(presetId));
             Message ack = readAck(socket);
 
             assertNotNull(ack, "Should receive an ACK message");
@@ -157,7 +165,8 @@ class ManagerServerIntegrationTest {
 
         try {
             Socket socket = new Socket("localhost", customServer.getLocalPort());
-            sendRegistration(socket, "dead-test-node");
+            UUID presetId = UUID.randomUUID();
+            sendRegistration(socket, "dead-test-node", generateToken(presetId));
             UUID assignedId = readAssignedId(socket);
 
             assertTrue(customServer.getRegistry().get(assignedId).isPresent(),
@@ -180,9 +189,17 @@ class ManagerServerIntegrationTest {
 
     // ──── Helpers ───────────────────────────────────────────────────
 
-    private void sendRegistration(Socket socket, String hostname) throws IOException {
+    private String generateToken(UUID workerId) {
+        String secret = "3c34e62a26514757c2c159851f50a80d46dddc7fa0a06df5c689f928e4e9b94z";
+        return Jwts.builder()
+                .subject(workerId.toString())
+                .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+    }
+
+    private void sendRegistration(Socket socket, String hostname, String token) throws IOException {
         String json = """
-                {"hostname":"%s"}""".formatted(hostname);
+                {"hostname":"%s", "auth_token":"%s"}""".formatted(hostname, token);
 
         byte[] wire = ProtocolEncoder.encode(MessageType.REGISTER_WORKER,
                 json.getBytes(StandardCharsets.UTF_8));

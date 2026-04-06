@@ -19,6 +19,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.security.Keys;
+
+import javax.crypto.SecretKey;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,7 +31,9 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -65,6 +72,7 @@ public class ManagerServer implements SmartLifecycle {
     private volatile boolean running;
     private ServerSocket serverSocket;
     private ScheduledExecutorService monitorExecutor;
+    private final SecretKey jwtSecretKey;
 
     /**
      * Creates a new ManagerServer using Spring constructor injection.
@@ -73,6 +81,7 @@ public class ManagerServer implements SmartLifecycle {
             @Value("${server.tcp.port:9090}") int port,
             @Value("${fernos.heartbeat.check.interval:5000}") long heartbeatCheckIntervalMs,
             @Value("${fernos.heartbeat.timeout:15000}") long heartbeatTimeoutMs,
+            @Value("${manager.security.jwt.secret:default-secret}") String jwtSecret,
             WorkerRegistry registry,
             JobRegistry jobRegistry,
             JobScheduler jobScheduler,
@@ -95,6 +104,7 @@ public class ManagerServer implements SmartLifecycle {
         this.jobScheduler = jobScheduler;
         this.jobTimeoutMonitor = jobTimeoutMonitor;
         this.eventListener = eventListener;
+        this.jwtSecretKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
         
         if (workerDeathListeners != null) {
             this.workerDeathListeners.addAll(workerDeathListeners);
@@ -234,16 +244,54 @@ public class ManagerServer implements SmartLifecycle {
      * @return the newly created {@link WorkerConnection}
      */
     private WorkerConnection handleRegistration(Message message, Socket socket) throws IOException {
-        // Parse payload for metadata only (hostname, etc.) — workerId is ignored
+        // Parse payload for metadata and auth_token
         JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
         String hostname = json.has("hostname") ? json.get("hostname").getAsString() : "unknown";
+        String authToken = json.has("auth_token") ? json.get("auth_token").getAsString() : null;
 
-        // Manager always assigns the UUID — never trust the client
-        UUID workerId = UUID.randomUUID();
+        if (authToken == null || authToken.isBlank()) {
+            LOG.warn("Registration rejected from {}: missing auth_token", socket.getRemoteSocketAddress());
+            throw new IOException("Missing auth_token");
+        }
+
+        UUID workerId;
+        try {
+            String subject = Jwts.parser()
+                    .verifyWith(jwtSecretKey)
+                    .build()
+                    .parseSignedClaims(authToken)
+                    .getPayload()
+                    .getSubject();
+            
+            workerId = UUID.fromString(subject);
+        } catch (JwtException | IllegalArgumentException e) {
+            LOG.warn("Registration rejected from {}: invalid auth_token - {}", socket.getRemoteSocketAddress(), e.getMessage());
+            throw new IOException("Invalid auth_token", e);
+        }
 
         WorkerConnection connection = new WorkerConnection(workerId, socket);
 
         LOG.info("Worker {} connected from {} (hostname: {})", workerId, connection.getRemoteAddress(), hostname);
+
+        Optional<WorkerConnection> prevOpt = registry.get(workerId);
+        if (prevOpt.isPresent()) {
+            WorkerConnection prev = prevOpt.get();
+            LOG.warn("Worker {} reconnected. Evicting previous stale connection.", workerId);
+            try { prev.getSocket().close(); } catch (Exception ignored) {}
+            if (registry.unregisterIfSame(workerId, prev)) {
+                eventListener.onWorkerDied(workerId);
+                UUID finalId = workerId;
+                workerDeathListeners.forEach(l -> l.onWorkerDeath(finalId));
+            }
+        }
+
+        // Persist worker registration — extract IP from socket
+        String ipAddress = (socket.getRemoteSocketAddress() instanceof InetSocketAddress addr)
+                ? addr.getHostString() : "unknown";
+        eventListener.onWorkerRegistered(workerId, hostname, ipAddress, connection.getConnectedAt());
+
+        // Make worker available to scheduler only after successful DB persistence
+        registry.register(connection);
 
         // Send REGISTER_ACK with the manager-assigned UUID
         JsonObject ackPayload = new JsonObject();
@@ -254,14 +302,6 @@ public class ManagerServer implements SmartLifecycle {
         OutputStream out = socket.getOutputStream();
         out.write(ackBytes);
         out.flush();
-
-        // Persist worker registration — extract IP from socket
-        String ipAddress = (socket.getRemoteSocketAddress() instanceof InetSocketAddress addr)
-                ? addr.getHostString() : "unknown";
-        eventListener.onWorkerRegistered(workerId, hostname, ipAddress, connection.getConnectedAt());
-
-        // Make worker available to scheduler only after successful DB persistence
-        registry.register(connection);
 
         return connection;
     }

@@ -97,16 +97,25 @@ public class DatabaseEventListener implements EngineEventListener {
     @Override
     @Transactional
     public void onWorkerRegistered(UUID workerId, String hostname, String ipAddress, Instant registeredAt) {
-        WorkerEntity entity = new WorkerEntity(
-                workerId,
-                hostname,
-                ipAddress,
-                WorkerStatus.IDLE,
-                registeredAt,
-                registeredAt
-        );
-        workerRepository.save(entity);
-        LOG.debug("DB: inserted worker {} (hostname={}, ip={})", workerId, hostname, ipAddress);
+        workerRepository.findById(workerId).ifPresentOrElse(entity -> {
+            entity.setHostname(hostname);
+            entity.setIpAddress(ipAddress);
+            entity.setStatus(WorkerStatus.IDLE);
+            entity.setLastHeartbeat(registeredAt);
+            workerRepository.save(entity);
+            LOG.debug("DB: updated worker {} (hostname={}, ip={})", workerId, hostname, ipAddress);
+        }, () -> {
+            WorkerEntity entity = new WorkerEntity(
+                    workerId,
+                    hostname,
+                    ipAddress,
+                    WorkerStatus.IDLE,
+                    registeredAt,
+                    registeredAt
+            );
+            workerRepository.save(entity);
+            LOG.debug("DB: inserted worker {} (hostname={}, ip={})", workerId, hostname, ipAddress);
+        });
     }
 
     /**

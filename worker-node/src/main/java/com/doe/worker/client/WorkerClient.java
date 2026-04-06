@@ -60,6 +60,8 @@ public class WorkerClient {
 
     private volatile boolean running = true;
     private volatile Socket socket;
+    
+    private final String authToken;
 
     /**
      * Creates a new WorkerClient with default heartbeat interval (5000ms).
@@ -68,7 +70,7 @@ public class WorkerClient {
      * @param port the manager TCP port
      */
     public WorkerClient(String host, int port) {
-        this(host, port, 5000, 10000);
+        this(host, port, 5000, 10000, null);
     }
 
     /**
@@ -79,7 +81,7 @@ public class WorkerClient {
      * @param heartbeatIntervalMs heartbeat interval in milliseconds
      */
     public WorkerClient(String host, int port, long heartbeatIntervalMs) {
-        this(host, port, heartbeatIntervalMs, 10000);
+        this(host, port, heartbeatIntervalMs, 10000, null);
     }
 
     /**
@@ -89,8 +91,9 @@ public class WorkerClient {
      * @param port                the manager TCP port
      * @param heartbeatIntervalMs heartbeat interval in milliseconds
      * @param readTimeoutMs       socket read timeout in milliseconds
+     * @param authToken           the JWT authentication token
      */
-    public WorkerClient(String host, int port, long heartbeatIntervalMs, int readTimeoutMs) {
+    public WorkerClient(String host, int port, long heartbeatIntervalMs, int readTimeoutMs, String authToken) {
         if (host == null || host.isBlank()) {
             throw new IllegalArgumentException("host must not be blank");
         }
@@ -107,6 +110,7 @@ public class WorkerClient {
         this.port = port;
         this.heartbeatIntervalMs = heartbeatIntervalMs;
         this.readTimeoutMs = readTimeoutMs;
+        this.authToken = authToken;
     }
 
     /**
@@ -165,6 +169,9 @@ public class WorkerClient {
             String hostname = resolveHostname();
             JsonObject regPayload = new JsonObject();
             regPayload.addProperty("hostname", hostname);
+            if (authToken != null && !authToken.isBlank()) {
+                regPayload.addProperty("auth_token", authToken);
+            }
 
             byte[] regBytes = ProtocolEncoder.encode(
                     MessageType.REGISTER_WORKER, GSON.toJson(regPayload));
