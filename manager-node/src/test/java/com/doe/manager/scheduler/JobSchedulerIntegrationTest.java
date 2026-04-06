@@ -116,8 +116,8 @@ class JobSchedulerIntegrationTest {
                             if (msg.type() == MessageType.ASSIGN_JOB) {
                                 assignmentsReceived.incrementAndGet();
                                 allAssigned.countDown();
-                                // Simulate job completion: release the worker
-                                server.getRegistry().get(wid).ifPresent(w -> w.setIdle());
+                                // Simulate job completion: release the worker back to the idle queue
+                                server.getRegistry().markIdle(wid);
                             }
                         }
                     } catch (IOException ignored) {
@@ -161,7 +161,7 @@ class JobSchedulerIntegrationTest {
             Thread.ofVirtual().start(() -> {
                 try {
                     Thread.sleep(300);
-                    server.getRegistry().get(workerId).ifPresent(w -> w.setIdle());
+                    server.getRegistry().markIdle(workerId);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }

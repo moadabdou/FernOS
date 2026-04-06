@@ -19,20 +19,18 @@ import java.io.OutputStream;
 import org.springframework.stereotype.Component;
 
 /**
- * Continuously polls the {@link JobQueue} and assigns pending jobs to idle workers.
+ * Continuously dequeues pending jobs and assigns them to idle workers.
  * <p>
- * Runs on a single Java-21 Virtual Thread. The loop is designed to be
- * responsive: it sleeps at most {@value #POLL_SLEEP_MS} ms when no work
- * or no workers are available.
+ * Runs on a single Java-21 Virtual Thread.
+ * {@link WorkerRegistry#findIdle()} <em>blocks</em> until a worker is available,
+ * so the loop only sleeps when the job queue is empty — no busy-waiting.
  *
  * <pre>
  * while (running) {
  *     job = queue.dequeue();
  *     if (job == null)  → sleep, continue
- *     worker = registry.findIdle();
- *     if (worker == null) → requeue(job), sleep, continue
+ *     worker = registry.findIdle();   // blocks until a worker is free
  *     job.transition(ASSIGNED)
- *     worker.trySetBusy()   ← already done inside findIdle()
  *     send ASSIGN_JOB over socket
  * }
  * </pre>
@@ -97,21 +95,13 @@ public class JobScheduler {
                 Job job = queue.dequeue();
 
                 if (job == null) {
-                    // Nothing to process — wait for new submissions
+                    // Nothing to process — block until a new job is submitted
                     Thread.sleep(POLL_SLEEP_MS);
                     continue;
                 }
 
+                // Blocks until an IDLE worker is available — no busy-waiting
                 WorkerConnection worker = registry.findIdle();
-
-                if (worker == null) {
-                    // No idle worker — put job back at the head of the queue
-                    queue.requeue(job);
-                    LOG.debug("No idle workers available. Job {} requeued. Queue size: {}",
-                            job.getId(), queue.size());
-                    Thread.sleep(POLL_SLEEP_MS);
-                    continue;
-                }
 
                 assignJob(job, worker);
 
@@ -175,8 +165,8 @@ public class JobScheduler {
             // Roll back job state: ASSIGNED → PENDING (valid transition)
             job.transition(JobStatus.PENDING);
             job.setAssignedWorkerId(null);
-            // setIdle() also clears currentJob atomically
-            worker.setIdle();
+            // markIdle() clears currentJob and re-offers the worker to the idle queue
+            registry.markIdle(worker.getId());
             // Re-insert at the head of the queue so it is retried promptly
             queue.requeue(job);
 

@@ -242,7 +242,6 @@ public class ManagerServer implements SmartLifecycle {
         UUID workerId = UUID.randomUUID();
 
         WorkerConnection connection = new WorkerConnection(workerId, socket);
-        registry.register(connection);
 
         LOG.info("Worker {} connected from {} (hostname: {})", workerId, connection.getRemoteAddress(), hostname);
 
@@ -260,6 +259,9 @@ public class ManagerServer implements SmartLifecycle {
         String ipAddress = (socket.getRemoteSocketAddress() instanceof InetSocketAddress addr)
                 ? addr.getHostString() : "unknown";
         eventListener.onWorkerRegistered(workerId, hostname, ipAddress, connection.getConnectedAt());
+
+        // Make worker available to scheduler only after successful DB persistence
+        registry.register(connection);
 
         return connection;
     }
@@ -320,7 +322,7 @@ public class ManagerServer implements SmartLifecycle {
 
         if (!workerId.equals(job.getAssignedWorkerId())) {
             LOG.warn("Worker {}: ignored JOB_RESULT for job {} (no longer assigned to this worker)", workerId, job.getId());
-            localConnection.setIdle();
+            registry.markIdle(workerId);
             return;
         }
 
@@ -344,8 +346,8 @@ public class ManagerServer implements SmartLifecycle {
         } catch (IllegalStateException e) {
             LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
         } finally {
-            // Always free the worker so it can accept the next assignment
-            localConnection.setIdle();
+            // markIdle() clears currentJob and re-offers the worker to the idle queue
+            registry.markIdle(workerId);
             LOG.info("Worker {}: marked IDLE after job {}", workerId, job.getId());
             eventListener.onWorkerIdle(workerId);
         }
