@@ -4,11 +4,13 @@ import type { Job, PaginatedResponse, CreateJobRequest } from '../types/api';
 export const getJobs = async (
   page: number = 0,
   size: number = 20,
-  status?: Job['status']
+  status?: Job['status'],
+  sort: string = 'createdAt,desc'
 ): Promise<PaginatedResponse<Job>> => {
   const params = new URLSearchParams({
     page: page.toString(),
     size: size.toString(),
+    sort: sort,
   });
   
   if (status) {

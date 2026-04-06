@@ -1,7 +1,7 @@
 export interface Job {
   id: string;
   status: 'PENDING' | 'ASSIGNED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
-  payload: Record<string, unknown>;
+  payload: string;
   result: string | null;
   workerId: string | null;
   createdAt: string;
@@ -20,12 +20,12 @@ export interface PaginatedResponse<T> {
   content: T[];
   totalElements: number;
   totalPages: number;
-  page: number;
+  number: number;
   size: number;
 }
 
 export interface CreateJobRequest {
-  payload: Record<string, unknown>;
+  payload: string;
 }
 
 export interface ApiError {
