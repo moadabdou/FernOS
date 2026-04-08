@@ -42,6 +42,9 @@ class DatabaseEventListenerTest {
     @Mock
     private TransactionTemplate transactionTemplate;
 
+    @Mock
+    private com.doe.core.registry.WorkerRegistry workerRegistry;
+
     private DatabaseEventListener listener;
 
     @BeforeEach
@@ -53,7 +56,7 @@ class DatabaseEventListenerTest {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
-        listener = new DatabaseEventListener(workerRepository, jobRepository, transactionTemplate);
+        listener = new DatabaseEventListener(workerRepository, jobRepository, transactionTemplate, workerRegistry);
         // Manually invoke the @PostConstruct callback
         listener.init();
     }

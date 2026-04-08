@@ -49,6 +49,7 @@ public class DatabaseEventListener implements EngineEventListener {
     private final WorkerRepository workerRepository;
     private final JobRepository jobRepository;
     private final TransactionTemplate transactionTemplate;
+    private final com.doe.core.registry.WorkerRegistry workerRegistry;
 
     /** Pending heartbeat timestamps keyed by workerId. Last write wins. */
     private final ConcurrentHashMap<UUID, Instant> pendingHeartbeats = new ConcurrentHashMap<>();
@@ -58,10 +59,12 @@ public class DatabaseEventListener implements EngineEventListener {
     public DatabaseEventListener(
             WorkerRepository workerRepository,
             JobRepository jobRepository,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            com.doe.core.registry.WorkerRegistry workerRegistry) {
         this.workerRepository = workerRepository;
         this.jobRepository = jobRepository;
         this.transactionTemplate = transactionTemplate;
+        this.workerRegistry = workerRegistry;
     }
 
     @PostConstruct
@@ -104,7 +107,7 @@ public class DatabaseEventListener implements EngineEventListener {
             entity.setMaxCapacity(maxCapacity);
             entity.setLastHeartbeat(registeredAt);
             workerRepository.save(entity);
-            LOG.debug("DB: updated worker {} (hostname={}, ip={}, capacity={})", workerId, hostname, ipAddress, maxCapacity);
+            // LOG.debug("DB: updated worker {} (hostname={}, ip={}, capacity={})", workerId, hostname, ipAddress, maxCapacity);
         }, () -> {
             WorkerEntity entity = new WorkerEntity(
                     workerId,
@@ -116,7 +119,7 @@ public class DatabaseEventListener implements EngineEventListener {
                     registeredAt
             );
             workerRepository.save(entity);
-            LOG.debug("DB: inserted worker {} (hostname={}, ip={}, capacity={})", workerId, hostname, ipAddress, maxCapacity);
+            // LOG.debug("DB: inserted worker {} (hostname={}, ip={}, capacity={})", workerId, hostname, ipAddress, maxCapacity);
         });
     }
 
@@ -135,13 +138,13 @@ public class DatabaseEventListener implements EngineEventListener {
             workerRepository.findById(workerId).ifPresentOrElse(entity -> {
                 entity.setStatus(WorkerStatus.OFFLINE);
                 workerRepository.save(entity);
-                LOG.debug("DB: worker {} → OFFLINE", workerId);
+                // LOG.debug("DB: worker {} → OFFLINE", workerId);
             }, () -> LOG.warn("DB: onWorkerDied — worker {} not found", workerId));
         } catch (org.springframework.dao.InvalidDataAccessApiUsageException | 
                  org.springframework.orm.jpa.JpaSystemException |
                  java.lang.IllegalStateException e) {
             // EntityManager is likely closed during application shutdown.
-            LOG.debug("DB: EntityManager closed when recording worker {} death: {}", workerId, e.getMessage());
+            // LOG.debug("DB: EntityManager closed when recording worker {} death: {}", workerId, e.getMessage());
         } catch (Exception e) {
             LOG.warn("DB: failed to record worker {} death", workerId, e);
         }
@@ -158,7 +161,7 @@ public class DatabaseEventListener implements EngineEventListener {
             entity.setUpdatedAt(updatedAt);
         }, "ASSIGNED");
         
-        adjustWorkerJobCount(workerId, 1);
+        updateWorkerJobCountFromRegistry(workerId);
     }
 
     @Override
@@ -179,9 +182,9 @@ public class DatabaseEventListener implements EngineEventListener {
             entity.setResult(result);
             entity.setUpdatedAt(updatedAt);
             jobRepository.save(entity);
-            LOG.debug("DB: job {} → COMPLETED", jobId);
+            // LOG.debug("DB: job {} → COMPLETED", jobId);
             
-            if (workerId != null) adjustWorkerJobCount(workerId, -1);
+            if (workerId != null) updateWorkerJobCountFromRegistry(workerId);
         });
     }
 
@@ -194,9 +197,9 @@ public class DatabaseEventListener implements EngineEventListener {
             entity.setResult(result);
             entity.setUpdatedAt(updatedAt);
             jobRepository.save(entity);
-            LOG.debug("DB: job {} → FAILED", jobId);
+            // LOG.debug("DB: job {} → FAILED", jobId);
             
-            if (workerId != null) adjustWorkerJobCount(workerId, -1);
+            if (workerId != null) updateWorkerJobCountFromRegistry(workerId);
         });
     }
 
@@ -210,20 +213,23 @@ public class DatabaseEventListener implements EngineEventListener {
             entity.setRetryCount(retryCount);
             entity.setUpdatedAt(updatedAt);
             jobRepository.save(entity);
-            LOG.debug("DB: job {} → PENDING (requeued, retry={})", jobId, retryCount);
+            // LOG.debug("DB: job {} → PENDING (requeued, retry={})", jobId, retryCount);
             
-            if (workerId != null) adjustWorkerJobCount(workerId, -1);
+            if (workerId != null) updateWorkerJobCountFromRegistry(workerId);
         });
     }
 
     // ─── Internals ───────────────────────────────────────────────────────────
 
-    private void adjustWorkerJobCount(UUID workerId, int delta) {
+    private void updateWorkerJobCountFromRegistry(UUID workerId) {
+        int count = workerRegistry.get(workerId)
+                .map(com.doe.core.model.WorkerConnection::getActiveJobCount)
+                .orElse(0);
         workerRepository.findById(workerId).ifPresentOrElse(worker -> {
-            worker.setActiveJobCount(Math.max(0, worker.getActiveJobCount() + delta));
+            worker.setActiveJobCount(count);
             workerRepository.save(worker);
-            LOG.debug("DB: adjusted activeJobCount for worker {} by {} (now {})", workerId, delta, worker.getActiveJobCount());
-        }, () -> LOG.warn("DB: worker {} not found when adjusting activeJobCount", workerId));
+            // LOG.debug("DB: set activeJobCount for worker {} to {}", workerId, count);
+        }, () -> LOG.warn("DB: worker {} not found when updating activeJobCount", workerId));
     }
 
     /**
@@ -234,7 +240,7 @@ public class DatabaseEventListener implements EngineEventListener {
         jobRepository.findById(jobId).ifPresentOrElse(entity -> {
             mutator.accept(entity);
             jobRepository.save(entity);
-            LOG.debug("DB: job {} → {}", jobId, description);
+            // LOG.debug("DB: job {} → {}", jobId, description);
         }, () -> LOG.warn("DB: job {} not found when trying to update to {}", jobId, description));
     }
 
@@ -265,7 +271,7 @@ public class DatabaseEventListener implements EngineEventListener {
                          java.lang.IllegalStateException e) {
                     // This typically happens during shutdown when the EntityManager is already closed.
                     // We log at DEBUG level to avoid alarming stack traces during normal shutdown.
-                    LOG.debug("DB: EntityManager closed during heartbeat flush for worker {}: {}", workerId, e.getMessage());
+                    // LOG.debug("DB: EntityManager closed during heartbeat flush for worker {}: {}", workerId, e.getMessage());
                     // Put it back in case the process isn't actually dead (unlikely, but safe)
                     pendingHeartbeats.putIfAbsent(workerId, ts);
                 } catch (Exception e) {
@@ -276,7 +282,7 @@ public class DatabaseEventListener implements EngineEventListener {
         }
 
         if (flushed > 0) {
-            LOG.debug("DB: flushed {} heartbeat(s)", flushed);
+            // LOG.debug("DB: flushed {} heartbeat(s)", flushed);
         }
     }
 }

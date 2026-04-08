@@ -12,8 +12,10 @@ export interface Worker {
   id: string;
   hostname: string;
   ipAddress: string;
-  status: 'IDLE' | 'BUSY' | 'OFFLINE';
+  status: 'ONLINE' | 'OFFLINE';
   lastHeartbeat: string;
+  maxCapacity: number;
+  activeJobCount: number;
 }
 
 export interface PaginatedResponse<T> {

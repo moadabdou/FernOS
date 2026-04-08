@@ -16,7 +16,7 @@ export const useSystemStats = () => {
         getJobs(0, 1, 'FAILED')
       ]);
 
-      const activeWorkers = workers.filter(w => w.status === 'BUSY' || w.status === 'IDLE');
+      const activeWorkers = workers.filter(w => w.status === 'ONLINE');
       
       const completedCount = completedJobs.totalElements;
       const failedCount = failedJobs.totalElements;
@@ -30,6 +30,8 @@ export const useSystemStats = () => {
         totalJobs: totalJobs.totalElements,
         pendingJobs: pendingJobs.totalElements,
         runningJobs: runningJobs.totalElements,
+        completedJobs: completedCount,
+        failedJobs: failedCount,
         completionRate
       };
     },

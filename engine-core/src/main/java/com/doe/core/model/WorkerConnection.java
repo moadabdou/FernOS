@@ -10,6 +10,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Represents a connected worker in the distributed orchestration engine.
@@ -19,6 +21,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * updated atomically for lock-free concurrent access.
  */
 public class WorkerConnection {
+
+    private static final Logger LOG = LoggerFactory.getLogger(WorkerConnection.class);
 
     private final UUID id;
     private final Socket socket;
@@ -101,6 +105,7 @@ public class WorkerConnection {
             }
             if (activeJobCount.compareAndSet(current, current + 1)) {
                 activeJobs.add(jobId);
+                LOG.info("\u001B[31mJob {} assigned to worker {}. Active jobs: {}\u001B[0m", jobId, id, current + 1);
                 return true;
             }
         }
@@ -111,7 +116,8 @@ public class WorkerConnection {
      */
     public void releaseCapacity(UUID jobId) {
         if (activeJobs.remove(jobId)) {
-            activeJobCount.decrementAndGet();
+            int remaining = activeJobCount.decrementAndGet();
+            LOG.info("\u001B[31mJob {} unassigned from worker {}. Active jobs: {}\u001B[0m", jobId, id, remaining);
         }
     }
 

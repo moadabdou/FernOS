@@ -319,7 +319,7 @@ public class ManagerServer implements SmartLifecycle {
      */
     private void handleHeartbeat(UUID workerId, WorkerConnection localConnection) {
         localConnection.updateHeartbeat();
-        LOG.debug("Heartbeat received from Worker {}", workerId);
+        // LOG.debug("Heartbeat received from Worker {}", workerId);
         eventListener.onWorkerHeartbeat(workerId, localConnection.getLastHeartbeat());
     }
 
@@ -397,6 +397,10 @@ public class ManagerServer implements SmartLifecycle {
             long durationMs = java.time.Duration.between(job.getCreatedAt(), job.getUpdatedAt()).toMillis();
             LOG.info("Job {} {} by Worker {} in {}ms", job.getId(), target, workerId, durationMs);
 
+            // Release capacity BEFORE notifying DB so the correct active job count is read
+            LOG.info("Worker {}: released capacity after job {}", workerId, job.getId());
+            registry.releaseCapacity(workerId, job.getId());
+
             // Persist the final job state to DB
             if (target == JobStatus.COMPLETED) {
                 eventListener.onJobCompleted(job.getId(), output, job.getUpdatedAt());
@@ -405,8 +409,7 @@ public class ManagerServer implements SmartLifecycle {
             }
         } catch (IllegalStateException e) {
             LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
-        } finally {
-            LOG.info("Worker {}: released capacity after job {}", workerId, job.getId());
+            LOG.info("Worker {}: released capacity after job {} failure", workerId, job.getId());
             registry.releaseCapacity(workerId, job.getId());
         }
     }

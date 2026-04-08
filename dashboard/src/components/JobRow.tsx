@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Job } from '../types/api';
-import { Box, PlaySquare, CheckSquare, XSquare, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { Box, PlaySquare, CheckSquare, XSquare, Clock, ChevronDown, ChevronRight, HardDrive } from 'lucide-react';
+import { getWorkerTheme } from '../utils/workerColors';
 
 interface JobRowProps {
   job: Job;
@@ -40,6 +41,9 @@ const JobRow: React.FC<JobRowProps> = ({ job }) => {
   const shortId = job.id.split('-')[0] || job.id;
   const workerHost = job.workerId ? `Worker-${job.workerId.substring(0,8)}` : '—'; // using ID substring as placeholder for worker hostname, since full hostname isn't in Job directly
 
+  const workerTheme = job.workerId ? getWorkerTheme(job.workerId, false) : null;
+  const showWorkerBadge = (job.status === 'ASSIGNED' || job.status === 'RUNNING') && workerTheme;
+
   let jobType = 'Task';
   let prettyPayload = job.payload;
   try {
@@ -69,8 +73,17 @@ const JobRow: React.FC<JobRowProps> = ({ job }) => {
           </div>
           
           {/* Worker assigned */}
-          <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-            {workerHost}
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate flex items-center pr-2">
+            {showWorkerBadge ? (
+              <span 
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${workerTheme!.bg} ${workerTheme!.text}`}
+              >
+                <HardDrive className="w-3 h-3 mr-1" />
+                {workerHost}
+              </span>
+            ) : (
+              <span className="text-slate-400 font-normal">{workerHost}</span>
+            )}
           </div>
           
           {/* Type */}

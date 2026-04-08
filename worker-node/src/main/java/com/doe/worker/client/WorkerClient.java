@@ -249,23 +249,14 @@ public class WorkerClient {
     private void runMainLoop(InputStream in, BlockingQueue<OutboundMessage> egressQueue, UUID workerId) throws IOException {
         LOG.info("Worker {} entering main loop, waiting for commands...", workerId);
 
-        int consecutiveTimeouts = 0;
-        final int MAX_TIMEOUTS = 3;
-
         while (running) {
             Message message;
             try {
                 message = ProtocolDecoder.decode(in);
-                consecutiveTimeouts = 0; // reset on successful read
             } catch (SocketTimeoutException e) {
                 if (!running) break;
-                consecutiveTimeouts++;
-                LOG.debug("Worker {}: read timeout {}/{}", workerId, consecutiveTimeouts, MAX_TIMEOUTS);
-
-                if (consecutiveTimeouts >= MAX_TIMEOUTS) {
-                    LOG.warn("Worker {}: disconnecting aggressively after {} consecutive read timeouts.", workerId, MAX_TIMEOUTS);
-                    break;
-                }
+                // Reading from the input stream timed out because the manager hasn't sent any commands.
+                // This is normal and expected when idle. We just loop and continue waiting.
                 continue;
             } catch (EOFException e) {
                 LOG.info("Worker {}: manager closed the connection (stream ended).", workerId);
@@ -419,7 +410,7 @@ public class WorkerClient {
                 egressQueue.put(new OutboundMessage(heartbeatBytes, e -> 
                         LOG.error("Worker {}: failed to send HEARTBEAT", workerId, e)
                 ));
-                LOG.debug("Worker {}: sent HEARTBEAT", workerId);
+                // LOG.debug("Worker {}: sent HEARTBEAT", workerId);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
