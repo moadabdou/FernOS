@@ -3,7 +3,12 @@ package com.doe.core.model;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -19,9 +24,11 @@ public class WorkerConnection {
     private final Socket socket;
     private final Instant connectedAt;
     private final AtomicReference<Instant> lastHeartbeat;
-    private final AtomicReference<WorkerStatus> status;
-    /** The job currently executing on this worker; {@code null} when IDLE. */
-    private final AtomicReference<Job> currentJob;
+    
+    private final int maxCapacity = 4;
+    private final AtomicInteger activeJobCount = new AtomicInteger(0);
+    private final Set<UUID> activeJobs = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean inAvailableQueue = new AtomicBoolean(false);
 
     /**
      * Creates a new worker connection.
@@ -40,8 +47,6 @@ public class WorkerConnection {
         this.socket = socket;
         this.connectedAt = Instant.now();
         this.lastHeartbeat = new AtomicReference<>(this.connectedAt);
-        this.status = new AtomicReference<>(WorkerStatus.IDLE);
-        this.currentJob = new AtomicReference<>(null);
     }
 
     public UUID getId() {
@@ -67,49 +72,47 @@ public class WorkerConnection {
         lastHeartbeat.set(Instant.now());
     }
 
-    /** Returns the current worker status. */
-    public WorkerStatus getStatus() {
-        return status.get();
+    public int getMaxCapacity() {
+        return maxCapacity;
     }
 
-    /** Returns {@code true} if this worker is currently IDLE. */
-    public boolean isIdle() {
-        return status.get() == WorkerStatus.IDLE;
+    public int getActiveJobCount() {
+        return activeJobCount.get();
+    }
+
+    public Set<UUID> getActiveJobs() {
+        return Collections.unmodifiableSet(activeJobs);
+    }
+    
+    public AtomicBoolean getInAvailableQueue() {
+        return inAvailableQueue;
     }
 
     /**
-     * Atomically transitions this worker from IDLE to BUSY.
+     * Atomically attempts to reserve capacity on this worker.
      *
-     * @return {@code true} if the CAS succeeded (was IDLE, now BUSY);
-     *         {@code false} if it was already BUSY
+     * @return true if capacity was reserved successfully, false if full
      */
-    public boolean trySetBusy() {
-        return status.compareAndSet(WorkerStatus.IDLE, WorkerStatus.BUSY);
-    }
-
-    /** Sets the worker status back to IDLE and clears the current job reference. */
-    public void setIdle() {
-        currentJob.set(null);
-        status.set(WorkerStatus.IDLE);
-    }
-
-    /**
-     * Returns the {@link Job} currently assigned to this worker,
-     * or {@code null} if the worker is idle.
-     * <p>
-     * Used by the manager to correlate incoming {@code JOB_RESULT} messages
-     * with the originating job without a separate lookup table.
-     */
-    public Job getCurrentJob() {
-        return currentJob.get();
+    public boolean tryReserveCapacity(UUID jobId) {
+        while (true) {
+            int current = activeJobCount.get();
+            if (current >= maxCapacity) {
+                return false;
+            }
+            if (activeJobCount.compareAndSet(current, current + 1)) {
+                activeJobs.add(jobId);
+                return true;
+            }
+        }
     }
 
     /**
-     * Sets the job currently executing on this worker.
-     * Call with {@code null} to clear (equivalent to what {@link #setIdle()} does).
+     * Releases one unit of capacity and removes the given job.
      */
-    public void setCurrentJob(Job job) {
-        currentJob.set(job);
+    public void releaseCapacity(UUID jobId) {
+        if (activeJobs.remove(jobId)) {
+            activeJobCount.decrementAndGet();
+        }
     }
 
     /**
@@ -126,7 +129,7 @@ public class WorkerConnection {
 
     @Override
     public String toString() {
-        return "WorkerConnection[id=%s, remote=%s, connectedAt=%s]"
-                .formatted(id, getRemoteAddress(), connectedAt);
+        return "WorkerConnection[id=%s, remote=%s, capacity=%d/%d, connectedAt=%s]"
+                .formatted(id, getRemoteAddress(), activeJobCount.get(), maxCapacity, connectedAt);
     }
 }

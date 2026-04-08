@@ -101,7 +101,7 @@ public class JobScheduler {
                 }
 
                 // Blocks until an IDLE worker is available — no busy-waiting
-                WorkerConnection worker = registry.findIdle();
+                WorkerConnection worker = registry.findAvailableWorker(job.getId());
 
                 assignJob(job, worker);
 
@@ -137,7 +137,6 @@ public class JobScheduler {
         try {
             // Record the reverse mapping: worker → job (for JOB_RESULT correlation)
             // MUST happen before sending to avoid race conditions with fast workers
-            worker.setCurrentJob(job);
 
             // Notify DB that the worker is now BUSY and the job has been ASSIGNED
             // MUST happen before sending to avoid out-of-order COMPLETED → ASSIGNED transitions
@@ -170,8 +169,8 @@ public class JobScheduler {
             eventListener.onWorkerIdle(worker.getId());
             eventListener.onJobRequeued(job.getId(), job.getRetryCount(), job.getUpdatedAt());
             
-            // markIdle() clears currentJob and re-offers the worker to the idle queue
-            registry.markIdle(worker.getId());
+            // releaseCapacity() frees slot and re-offers worker if available
+            registry.releaseCapacity(worker.getId(), job.getId());
             // Re-insert at the head of the queue so it is retried promptly
             queue.requeue(job);
         }

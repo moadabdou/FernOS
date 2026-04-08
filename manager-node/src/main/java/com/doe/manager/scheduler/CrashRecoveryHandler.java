@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -36,8 +35,8 @@ public class CrashRecoveryHandler implements WorkerDeathListener {
     }
 
     @Override
-    public void onWorkerDeath(UUID workerId) {
-        List<Job> affectedJobs = jobRegistry.findByWorker(workerId);
+    public void onWorkerDeath(UUID workerId, java.util.Set<UUID> activeJobs) {
+        java.util.List<Job> affectedJobs = activeJobs.stream().map(jobRegistry::get).filter(java.util.Optional::isPresent).map(java.util.Optional::get).collect(java.util.stream.Collectors.toList());
         int recovered = 0;
 
         for (Job job : affectedJobs) {

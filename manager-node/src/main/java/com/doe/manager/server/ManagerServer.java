@@ -214,6 +214,9 @@ public class ManagerServer implements SmartLifecycle {
             LOG.error("I/O error handling worker {}", workerId != null ? workerId : "unknown", e);
         } finally {
             if (workerId != null && localConnection != null) {
+                // Take snapshot of active jobs before unregistering
+                java.util.Set<UUID> activeJobsSnapshot = new java.util.HashSet<>(localConnection.getActiveJobs());
+
                 // Conditional remove: only evict if WE are still the registered connection.
                 // If a newer thread re-registered with the same UUID, leave its entry alone.
                 boolean removed = registry.unregisterIfSame(workerId, localConnection);
@@ -222,7 +225,7 @@ public class ManagerServer implements SmartLifecycle {
                     // Notify DB: TCP disconnect → worker is offline
                     eventListener.onWorkerDied(workerId);
                     UUID finalId = workerId;
-                    workerDeathListeners.forEach(l -> l.onWorkerDeath(finalId));
+                    workerDeathListeners.forEach(l -> l.onWorkerDeath(finalId, activeJobsSnapshot));
                 } else {
                     LOG.debug("Worker {} was already {}", workerId, registry.get(workerId).isPresent() ? "replaced by a newer connection; skipping removal" : "removed by another thread; skipping removal");
                 }
@@ -276,12 +279,13 @@ public class ManagerServer implements SmartLifecycle {
         Optional<WorkerConnection> prevOpt = registry.get(workerId);
         if (prevOpt.isPresent()) {
             WorkerConnection prev = prevOpt.get();
+            java.util.Set<UUID> activeJobsSnapshot = new java.util.HashSet<>(prev.getActiveJobs());
             LOG.warn("Worker {} reconnected. Evicting previous stale connection.", workerId);
             try { prev.getSocket().close(); } catch (Exception ignored) {}
             if (registry.unregisterIfSame(workerId, prev)) {
                 eventListener.onWorkerDied(workerId);
                 UUID finalId = workerId;
-                workerDeathListeners.forEach(l -> l.onWorkerDeath(finalId));
+                workerDeathListeners.forEach(l -> l.onWorkerDeath(finalId, activeJobsSnapshot));
             }
         }
 
@@ -327,11 +331,19 @@ public class ManagerServer implements SmartLifecycle {
      * not yet started" from "actively executing".
      */
     private void handleJobRunning(UUID workerId, WorkerConnection localConnection, Message message) {
-        Job job = localConnection.getCurrentJob();
-        if (job == null) {
-            LOG.warn("Worker {}: received JOB_RUNNING but no current job tracked", workerId);
+        JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
+        if (!json.has("jobId")) {
+            LOG.warn("Worker {}: message missing jobId", workerId);
             return;
         }
+        UUID jobId = UUID.fromString(json.get("jobId").getAsString());
+        Job job = jobRegistry.get(jobId).orElse(null);
+        
+        if (job == null) {
+            LOG.warn("Worker {}: received JOB_RUNNING for unknown job {}", workerId, jobId);
+            return;
+        }
+        
         if (!workerId.equals(job.getAssignedWorkerId())) {
             LOG.warn("Worker {}: ignored JOB_RUNNING for job {} (no longer assigned to this worker)", workerId, job.getId());
             return;
@@ -353,17 +365,25 @@ public class ManagerServer implements SmartLifecycle {
         JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
         String status = json.has("status") ? json.get("status").getAsString() : "FAILED";
         String output = json.has("output") ? json.get("output").getAsString() : "";
+        
+        if (!json.has("jobId")) {
+            LOG.warn("Worker {}: message missing jobId", workerId);
+            return;
+        }
+        UUID jobId = UUID.fromString(json.get("jobId").getAsString());
+        Job job = jobRegistry.get(jobId).orElse(null);
 
-        Job job = localConnection.getCurrentJob();
         if (job == null) {
-            LOG.warn("Worker {}: received JOB_RESULT but no current job tracked", workerId);
+            LOG.warn("Worker {}: received JOB_RESULT for unknown job {}", workerId, jobId);
             return;
         }
 
         if (!workerId.equals(job.getAssignedWorkerId())) {
             LOG.warn("Worker {}: ignored JOB_RESULT for job {} (no longer assigned to this worker)", workerId, job.getId());
+            // It's possible the capacity was implicitly returned via a timeout rollback, 
+            // but we can make sure by calling releaseCapacity here too.
+            registry.releaseCapacity(workerId, jobId);
             eventListener.onWorkerIdle(workerId);
-            registry.markIdle(workerId);
             return;
         }
 
@@ -388,9 +408,8 @@ public class ManagerServer implements SmartLifecycle {
             LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
         } finally {
             eventListener.onWorkerIdle(workerId);
-            LOG.info("Worker {}: marked IDLE after job {}", workerId, job.getId());
-            // markIdle() clears currentJob and re-offers the worker to the idle queue
-            registry.markIdle(workerId);
+            LOG.info("Worker {}: released capacity after job {}", workerId, job.getId());
+            registry.releaseCapacity(workerId, job.getId());
         }
     }
 
@@ -418,6 +437,10 @@ public class ManagerServer implements SmartLifecycle {
                         } catch (IOException e) {
                             LOG.warn("Error closing dead worker {} socket", worker.getId(), e);
                         }
+                        
+                        // Take snapshot of active jobs before unregistering
+                        java.util.Set<UUID> activeJobsSnapshot = new java.util.HashSet<>(worker.getActiveJobs());
+
                         // Remove from registry immediately to prevent relying on the handler thread's finally block
                         boolean removed = registry.unregisterIfSame(worker.getId(), worker);
 
@@ -425,7 +448,7 @@ public class ManagerServer implements SmartLifecycle {
                             // Notify listeners (e.g., CrashRecoveryHandler) and persist to DB
                             LOG.info("Worker {} removed from registry (heartbeat timeout)", worker.getId());
                             eventListener.onWorkerDied(worker.getId());
-                            workerDeathListeners.forEach(l -> l.onWorkerDeath(worker.getId()));
+                            workerDeathListeners.forEach(l -> l.onWorkerDeath(worker.getId(), activeJobsSnapshot));
                         } else {
                             LOG.warn("Worker {} was already removed from registry", worker.getId());
                         }
