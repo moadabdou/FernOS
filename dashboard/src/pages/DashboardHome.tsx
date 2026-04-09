@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJobs } from '../api/jobs';
 import WorkerNodesPanel from '../components/WorkerNodesPanel';
 import JobRow from '../components/JobRow';
-import { Loader2, Activity, Users, Box, Hexagon, PlaySquare, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Activity, Users, Box, Hexagon, PlaySquare, CheckCircle, XCircle, Slash, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const RecentActivityFeed: React.FC = () => {
   const [page, setPage] = useState(0);
@@ -72,12 +72,13 @@ const DashboardHome: React.FC = () => {
     { label: 'Running Jobs', value: stats?.runningJobs ?? mockZero, icon: PlaySquare, color: 'text-purple-500' },
     { label: 'Completed Jobs', value: stats?.completedJobs ?? mockZero, icon: CheckCircle, color: 'text-emerald-500' },
     { label: 'Failed Jobs', value: stats?.failedJobs ?? mockZero, icon: XCircle, color: 'text-red-500' },
+    { label: 'Cancelled', value: stats?.cancelledJobs ?? mockZero, icon: Slash, color: 'text-slate-400' },
   ];
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-6">
       {/* Top Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 flex-shrink-0">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 flex-shrink-0">
         {metricCards.map((card, i) => (
           <div key={i} className="glass-card p-4 flex flex-col justify-between h-28 relative overflow-hidden group">
             <div className={`absolute -right-4 -top-4 w-16 h-16 ${card.color} opacity-10 group-hover:opacity-20 transition-opacity rounded-full mix-blend-multiply dark:mix-blend-screen blur-xl`}></div>

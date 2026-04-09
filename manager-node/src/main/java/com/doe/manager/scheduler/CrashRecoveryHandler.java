@@ -47,18 +47,21 @@ public class CrashRecoveryHandler implements WorkerDeathListener {
                     try {
                         job.transition(JobStatus.PENDING);
                         job.setAssignedWorkerId(null);
+                        // Update DB BEFORE making job available in queue to prevent race condition
+                        eventListener.onJobRequeued(job.getId(), job.getRetryCount(), job.getUpdatedAt());
                         jobQueue.requeue(job); // Add to the front of the line
                         recovered++;
                         LOG.info("Job {} transitioned back to PENDING (retry {}/3)", job.getId(), job.getRetryCount());
-                        eventListener.onJobRequeued(job.getId(), job.getRetryCount(), job.getUpdatedAt());
                     } catch (IllegalStateException e) {
                         LOG.error("Failed to recover job {}", job.getId(), e);
                     }
                 } else {
                     job.transition(JobStatus.FAILED);
                     job.setResult("Failed after exceeding max retries (3) due to worker deaths.");
+                    UUID failedWorkerId = job.getAssignedWorkerId();  // Capture before clear
+                    job.setAssignedWorkerId(null);
                     LOG.warn("Job {} FAILED after exceeding max retries.", job.getId());
-                    eventListener.onJobFailed(job.getId(), job.getResult(), job.getUpdatedAt());
+                    eventListener.onJobFailed(job.getId(), failedWorkerId, job.getResult(), job.getUpdatedAt());
                 }
             }
         }
@@ -78,10 +81,11 @@ public class CrashRecoveryHandler implements WorkerDeathListener {
                 job.transition(JobStatus.PENDING);
                 UUID oldWorkerId = job.getAssignedWorkerId();
                 job.setAssignedWorkerId(null);
-                jobQueue.requeue(job);
-                LOG.info("Job {} timed out on worker {} and transitioned back to PENDING (retry {}/3)", 
-                         job.getId(), oldWorkerId, job.getRetryCount());
+                // Update DB BEFORE making job available in queue to prevent race condition
                 eventListener.onJobRequeued(job.getId(), job.getRetryCount(), job.getUpdatedAt());
+                jobQueue.requeue(job);
+                LOG.info("Job {} timed out on worker {} and transitioned back to PENDING (retry {}/3)",
+                         job.getId(), oldWorkerId, job.getRetryCount());
             } catch (IllegalStateException e) {
                 LOG.error("Failed to recover timed-out job {}", job.getId(), e);
             }
@@ -89,8 +93,10 @@ public class CrashRecoveryHandler implements WorkerDeathListener {
             try {
                 job.transition(JobStatus.FAILED);
                 job.setResult("Failed after exceeding max retries (3) due to timeouts.");
+                UUID failedWorkerId = job.getAssignedWorkerId();  // Capture before clear
+                job.setAssignedWorkerId(null);
                 LOG.warn("Job {} FAILED after exceeding max retries due to timeouts.", job.getId());
-                eventListener.onJobFailed(job.getId(), job.getResult(), job.getUpdatedAt());
+                eventListener.onJobFailed(job.getId(), failedWorkerId, job.getResult(), job.getUpdatedAt());
             } catch (IllegalStateException e) {
                  LOG.error("Failed to fail timed-out job {}", job.getId(), e);
             }

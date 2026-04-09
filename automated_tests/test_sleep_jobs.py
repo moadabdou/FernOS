@@ -26,7 +26,7 @@ def clear_db():
 
 def submit_job(use_error=False):
     # Random sleep amount between 10,000 and 30,000 ms (10-30s)
-    sleep_ms = random.randint(5000, 65000)
+    sleep_ms = random.randint(5000, 40000)
     
     # Outer JSON requires "payload" to be a stringified JSON object
     if use_error and random.random() < 0.10:

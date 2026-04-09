@@ -100,6 +100,11 @@ public class JobScheduler {
                     continue;
                 }
 
+                if (job.getStatus() == com.doe.core.model.JobStatus.CANCELLED) {
+                    LOG.info("Job {} was cancelled before assignment, dropping from queue", job.getId());
+                    continue;
+                }
+
                 // Blocks until an IDLE worker is available — no busy-waiting
                 WorkerConnection worker = registry.findAvailableWorker(job.getId());
 
@@ -108,6 +113,8 @@ public class JobScheduler {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 LOG.debug("Scheduler thread interrupted, stopping");
+            } catch (Exception e) {
+                LOG.error("Unexpected error in scheduling loop, attempting to recover", e);
             }
         }
     }

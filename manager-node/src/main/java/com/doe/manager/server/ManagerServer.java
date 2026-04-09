@@ -388,9 +388,15 @@ public class ManagerServer implements SmartLifecycle {
 
         job.setResult(output);
         try {
-            JobStatus target = "COMPLETED".equals(status)
-                    ? JobStatus.COMPLETED
-                    : JobStatus.FAILED;
+            JobStatus target;
+            if ("COMPLETED".equals(status)) {
+                target = JobStatus.COMPLETED;
+            } else if ("CANCELLED".equals(status)) {
+                target = JobStatus.CANCELLED;
+            } else {
+                target = JobStatus.FAILED;
+            }
+            
             job.transition(target);
             LOG.info("Worker {}: job {} → {} | output: {}", workerId, job.getId(), target, output);
 
@@ -403,9 +409,11 @@ public class ManagerServer implements SmartLifecycle {
 
             // Persist the final job state to DB
             if (target == JobStatus.COMPLETED) {
-                eventListener.onJobCompleted(job.getId(), output, job.getUpdatedAt());
+                eventListener.onJobCompleted(job.getId(), workerId, output, job.getUpdatedAt());
+            } else if (target == JobStatus.CANCELLED) {
+                eventListener.onJobCancelled(job.getId(), workerId, output, job.getUpdatedAt());
             } else {
-                eventListener.onJobFailed(job.getId(), output, job.getUpdatedAt());
+                eventListener.onJobFailed(job.getId(), workerId, output, job.getUpdatedAt());
             }
         } catch (IllegalStateException e) {
             LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
@@ -511,6 +519,29 @@ public class ManagerServer implements SmartLifecycle {
         if (listener != null) {
             workerDeathListeners.add(listener);
         }
+    }
+
+    /**
+     * Sends a CANCEL_JOB message to the specified worker for the given job.
+     *
+     * @param workerId the ID of the worker executing the job
+     * @param jobId    the ID of the job to abort
+     */
+    public void sendCancelJob(UUID workerId, UUID jobId) {
+        registry.get(workerId).ifPresentOrElse(connection -> {
+            try {
+                JsonObject json = new JsonObject();
+                json.addProperty("jobId", jobId.toString());
+                byte[] wire = ProtocolEncoder.encode(MessageType.CANCEL_JOB, GSON.toJson(json));
+                connection.getSocket().getOutputStream().write(wire);
+                connection.getSocket().getOutputStream().flush();
+                LOG.info("ManagerServer: Sent CANCEL_JOB to worker {} targeting job {}", workerId, jobId);
+            } catch (Exception e) {
+                LOG.error("ManagerServer: Failed to dispatch CANCEL_JOB to worker {}", workerId, e);
+            }
+        }, () -> {
+            LOG.warn("ManagerServer: Worker {} not found, couldn't issue CANCEL_JOB for {}", workerId, jobId);
+        });
     }
 
     /**

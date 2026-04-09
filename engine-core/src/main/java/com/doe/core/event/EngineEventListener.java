@@ -70,20 +70,32 @@ public interface EngineEventListener {
      * Fired when a job transitions to COMPLETED after receiving a successful JOB_RESULT.
      *
      * @param jobId     the completed job
+     * @param workerId  the worker that executed this job (may be null if job was never assigned)
      * @param result    the output string from the worker
      * @param updatedAt the timestamp recorded in the domain object
      */
-    void onJobCompleted(UUID jobId, String result, Instant updatedAt);
+    void onJobCompleted(UUID jobId, UUID workerId, String result, Instant updatedAt);
 
     /**
      * Fired when a job transitions to FAILED (worker reported failure, max retries
      * exceeded, or permanent timeout).
      *
      * @param jobId     the failed job
+     * @param workerId  the worker that executed this job (may be null if job was never assigned)
      * @param result    failure reason / worker output
      * @param updatedAt the timestamp recorded in the domain object
      */
-    void onJobFailed(UUID jobId, String result, Instant updatedAt);
+    void onJobFailed(UUID jobId, UUID workerId, String result, Instant updatedAt);
+
+    /**
+     * Fired when a job transitions to CANCELLED.
+     *
+     * @param jobId     the cancelled job
+     * @param workerId  the worker that was assigned (may be null if job was never assigned)
+     * @param result    reason for cancellation
+     * @param updatedAt the timestamp recorded in the domain object
+     */
+    void onJobCancelled(UUID jobId, UUID workerId, String result, Instant updatedAt);
 
     /**
      * Fired whenever a job is re-inserted as PENDING — either by crash-recovery

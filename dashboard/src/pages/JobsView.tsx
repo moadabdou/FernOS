@@ -50,6 +50,7 @@ const JobsView: React.FC = () => {
               <option value="RUNNING" className="dark:bg-slate-800">Running</option>
               <option value="COMPLETED" className="dark:bg-slate-800">Completed</option>
               <option value="FAILED" className="dark:bg-slate-800">Failed</option>
+              <option value="CANCELLED" className="dark:bg-slate-800">Cancelled</option>
             </select>
           </div>
 

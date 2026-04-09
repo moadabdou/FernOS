@@ -168,14 +168,16 @@ class DatabaseEventListenerTest {
     @DisplayName("onJobCompleted → updates job status=COMPLETED and result")
     void onJobCompleted_updatesEntity() {
         UUID jobId = UUID.randomUUID();
+        UUID workerId = UUID.randomUUID();
         Instant now = Instant.now();
         JobEntity entity = jobEntity(jobId, JobStatus.RUNNING);
         when(jobRepository.findById(jobId)).thenReturn(Optional.of(entity));
 
-        listener.onJobCompleted(jobId, "done", now);
+        listener.onJobCompleted(jobId, workerId, "done", now);
 
         assertThat(entity.getStatus()).isEqualTo(JobStatus.COMPLETED);
         assertThat(entity.getResult()).isEqualTo("done");
+        assertThat(entity.getWorkerId()).isEqualTo(workerId);
         assertThat(entity.getUpdatedAt()).isEqualTo(now);
         verify(jobRepository).save(entity);
     }
@@ -184,14 +186,16 @@ class DatabaseEventListenerTest {
     @DisplayName("onJobFailed → updates job status=FAILED and result")
     void onJobFailed_updatesEntity() {
         UUID jobId = UUID.randomUUID();
+        UUID workerId = UUID.randomUUID();
         Instant now = Instant.now();
         JobEntity entity = jobEntity(jobId, JobStatus.RUNNING);
         when(jobRepository.findById(jobId)).thenReturn(Optional.of(entity));
 
-        listener.onJobFailed(jobId, "boom", now);
+        listener.onJobFailed(jobId, workerId, "boom", now);
 
         assertThat(entity.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(entity.getResult()).isEqualTo("boom");
+        assertThat(entity.getWorkerId()).isEqualTo(workerId);
         assertThat(entity.getUpdatedAt()).isEqualTo(now);
         verify(jobRepository).save(entity);
     }

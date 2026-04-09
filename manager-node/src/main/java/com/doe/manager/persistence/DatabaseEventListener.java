@@ -175,30 +175,45 @@ public class DatabaseEventListener implements EngineEventListener {
 
     @Override
     @Transactional
-    public void onJobCompleted(UUID jobId, String result, Instant updatedAt) {
+    public void onJobCompleted(UUID jobId, UUID workerId, String result, Instant updatedAt) {
         jobRepository.findById(jobId).ifPresent(entity -> {
-            UUID workerId = entity.getWorkerId();
+            entity.setWorkerId(workerId);  // Explicitly set worker_id to prevent race condition
             entity.setStatus(JobStatus.COMPLETED);
             entity.setResult(result);
             entity.setUpdatedAt(updatedAt);
             jobRepository.save(entity);
             // LOG.debug("DB: job {} → COMPLETED", jobId);
-            
+
             if (workerId != null) updateWorkerJobCountFromRegistry(workerId);
         });
     }
 
     @Override
     @Transactional
-    public void onJobFailed(UUID jobId, String result, Instant updatedAt) {
+    public void onJobFailed(UUID jobId, UUID workerId, String result, Instant updatedAt) {
         jobRepository.findById(jobId).ifPresent(entity -> {
-            UUID workerId = entity.getWorkerId();
+            entity.setWorkerId(workerId);  // Explicitly set worker_id to prevent race condition
             entity.setStatus(JobStatus.FAILED);
             entity.setResult(result);
             entity.setUpdatedAt(updatedAt);
             jobRepository.save(entity);
             // LOG.debug("DB: job {} → FAILED", jobId);
-            
+
+            if (workerId != null) updateWorkerJobCountFromRegistry(workerId);
+        });
+    }
+
+    @Override
+    @Transactional
+    public void onJobCancelled(UUID jobId, UUID workerId, String result, Instant updatedAt) {
+        jobRepository.findById(jobId).ifPresent(entity -> {
+            entity.setWorkerId(workerId);  // Explicitly set worker_id to prevent race condition
+            entity.setStatus(JobStatus.CANCELLED);
+            entity.setResult(result);
+            entity.setUpdatedAt(updatedAt);
+            jobRepository.save(entity);
+            // LOG.debug("DB: job {} → CANCELLED", jobId);
+
             if (workerId != null) updateWorkerJobCountFromRegistry(workerId);
         });
     }

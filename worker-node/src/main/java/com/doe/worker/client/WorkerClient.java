@@ -32,6 +32,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -75,7 +76,7 @@ public class WorkerClient {
     private final String authToken;
     private final TaskPluginRegistry registry;
     private final ExecutorService jobExecutor;
-    private final ConcurrentHashMap<String, CompletableFuture<?>> activeJobs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Future<?>> activeJobs = new ConcurrentHashMap<>();
 
     private volatile boolean running = true;
     private volatile Socket socket;
@@ -270,6 +271,7 @@ public class WorkerClient {
 
             switch (message.type()) {
                 case ASSIGN_JOB -> handleAssignJob(message, egressQueue, workerId);
+                case CANCEL_JOB -> handleCancelJob(message, workerId);
                 default -> LOG.warn("Worker {}: unexpected message type: {}",
                         workerId, message.type());
             }
@@ -309,58 +311,80 @@ public class WorkerClient {
         }
 
         // ── 2. Execute the task asynchronously ──────────────────────────────────
-        CompletableFuture<Void> future = CompletableFuture
-                .supplyAsync(() -> {
-                    try {
-                        return registry.execute(payloadJson);
-                    } catch (UnknownTaskTypeException ex) {
-                        // Surface as a clean FAILED result rather than an unexpected error
-                        throw new CompletionException(ex);
-                    } catch (Exception ex) {
-                        throw new CompletionException(ex);
-                    }
-                }, jobExecutor)
-                .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .handle((result, ex) -> {
-                    String status;
-                    String output;
-                    if (ex != null) {
-                        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                        status = "FAILED";
-                        output = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
-                        if (cause instanceof UnknownTaskTypeException) {
-                            LOG.warn("Worker {}: job {} FAILED — unknown task type: {}", workerId, jobId, cause.getMessage());
-                        } else {
-                            LOG.warn("Worker {}: job {} FAILED — {}", workerId, jobId, output);
-                        }
+        Future<String> taskFuture = jobExecutor.submit(() -> registry.execute(payloadJson));
+        activeJobs.put(jobId, taskFuture);
+
+        Thread.ofVirtual().name("job-waiter-" + jobId).start(() -> {
+            String status;
+            String output;
+            try {
+                String result = taskFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+                status = "COMPLETED";
+                output = result;
+                LOG.info("Worker {}: job {} COMPLETED — output: {}", workerId, jobId, output);
+            } catch (java.util.concurrent.TimeoutException e) {
+                taskFuture.cancel(true);
+                status = "FAILED";
+                output = "Job execution timed out after " + timeoutMs + "ms";
+                LOG.warn("Worker {}: job {} FAILED — timeout", workerId, jobId);
+            } catch (java.util.concurrent.CancellationException e) {
+                status = "CANCELLED";
+                output = "Job was cancelled by the manager";
+                LOG.info("Worker {}: job {} CANCELLED", workerId, jobId);
+            } catch (java.util.concurrent.ExecutionException e) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                if (cause instanceof InterruptedException) {
+                    status = "CANCELLED";
+                    output = "Job was cancelled by the manager";
+                    LOG.info("Worker {}: job {} CANCELLED", workerId, jobId);
+                } else {
+                    status = "FAILED";
+                    output = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+                    if (cause instanceof UnknownTaskTypeException) {
+                        LOG.warn("Worker {}: job {} FAILED — unknown task type: {}", workerId, jobId, cause.getMessage());
                     } else {
-                        status = "COMPLETED";
-                        output = result;
-                        LOG.info("Worker {}: job {} COMPLETED — output: {}", workerId, jobId, output);
+                        LOG.warn("Worker {}: job {} FAILED — {}", workerId, jobId, output);
                     }
+                }
+            } catch (InterruptedException e) {
+                status = "CANCELLED";
+                output = "Job was cancelled by the manager";
+                LOG.info("Worker {}: job {} CANCELLED", workerId, jobId);
+            }
 
-                    activeJobs.remove(jobId);
+            activeJobs.remove(jobId);
 
-                    // ── 3. Send JOB_RESULT back to manager ───────────────────────────────
-                    try {
-                        JsonObject resultBody = new JsonObject();
-                        resultBody.addProperty("jobId", jobId);
-                        resultBody.addProperty("status", status);
-                        resultBody.addProperty("output", output);
-                        byte[] resultBytes = ProtocolEncoder.encode(MessageType.JOB_RESULT, GSON.toJson(resultBody));
-                        egressQueue.put(new OutboundMessage(resultBytes,
-                                e -> LOG.error("Worker {}: failed to send JOB_RESULT for job {}", workerId, jobId, e)));
-                        LOG.info("Worker {}: sent JOB_RESULT ({}) for job {}", workerId, status, jobId);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        LOG.warn("Worker {}: interrupted while sending JOB_RESULT for job {}", workerId, jobId);
-                    }
-                    
-                    return null;
-                });
-                
-        activeJobs.put(jobId, future);
+            // ── 3. Send JOB_RESULT back to manager ───────────────────────────────
+            try {
+                JsonObject resultBody = new JsonObject();
+                resultBody.addProperty("jobId", jobId);
+                resultBody.addProperty("status", status);
+                resultBody.addProperty("output", output);
+                byte[] resultBytes = ProtocolEncoder.encode(MessageType.JOB_RESULT, GSON.toJson(resultBody));
+                egressQueue.put(new OutboundMessage(resultBytes,
+                        err -> LOG.error("Worker {}: failed to send JOB_RESULT for job {}", workerId, jobId, err)));
+                LOG.info("Worker {}: sent JOB_RESULT ({}) for job {}", workerId, status, jobId);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.warn("Worker {}: interrupted while sending JOB_RESULT for job {}", workerId, jobId);
+            }
+        });
         // Worker stays in the loop — ready for the next ASSIGN_JOB
+    }
+
+    private void handleCancelJob(Message message, UUID workerId) {
+        JsonObject envelope = GSON.fromJson(message.payloadAsString(), JsonObject.class);
+        String jobId = envelope.has("jobId") ? envelope.get("jobId").getAsString() : "unknown";
+
+        LOG.info("Worker {}: received CANCEL_JOB — jobId={}", workerId, jobId);
+
+        Future<?> future = activeJobs.get(jobId);
+        if (future != null) {
+            boolean cancelled = future.cancel(true);
+            LOG.info("Worker {}: attempting to cancel job {} — successful: {}", workerId, jobId, cancelled);
+        } else {
+            LOG.warn("Worker {}: received CANCEL_JOB for unknown or already completed job {}", workerId, jobId);
+        }
     }
 
     /**
