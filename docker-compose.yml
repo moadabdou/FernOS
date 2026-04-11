@@ -25,7 +25,7 @@ services:
   manager:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: manager-node/Dockerfile
     container_name: fernos-manager
     restart: unless-stopped
     depends_on:
@@ -39,6 +39,26 @@ services:
     ports:
       - "8080:8080"
       - "9090:9090"
+    networks:
+      - fernos-net
+
+  # ── Worker nodes (scale with: docker compose up --scale worker=N) ─
+  worker:
+    build:
+      context: .
+      dockerfile: worker-node/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      manager:
+        condition: service_healthy
+    environment:
+      MANAGER_HOST: manager
+      MANAGER_PORT: "9090"
+      WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-}
+      WORKER_DEV_MODE: "true"
+      MANAGER_SECURITY_JWT_SECRET: ${JWT_SECRET}
+    deploy:
+      replicas: 3
     networks:
       - fernos-net
 

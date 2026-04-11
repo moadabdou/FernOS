@@ -17,7 +17,7 @@ COPY manager-node/pom.xml manager-node/
 #    Cached unless any POM layer above changes.
 #    Subsequent builds skip network I/O entirely.
 RUN mvn -pl engine-core,manager-node -am dependency:go-offline \
-    --batch-mode -Dmaven.test.skip=true 
+    --batch-mode -Dmaven.test.skip=true
 
 # ── Layer 4: Copy source code (changes frequently) ──
 COPY engine-core/src engine-core/src

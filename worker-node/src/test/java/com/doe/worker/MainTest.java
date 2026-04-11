@@ -16,20 +16,20 @@ class MainTest {
     @DisplayName("parseArg returns the value after the matching flag")
     void parseArg_returnsValueForKnownFlag() {
         String[] args = {"--host", "192.168.1.10", "--port", "8080"};
-        assertEquals("192.168.1.10", Main.parseArg(args, "--host", "localhost"));
+        assertEquals("192.168.1.10", Main.parseArg(args, "--host", null, "localhost"));
     }
 
     @Test
     @DisplayName("parseArg returns defaultValue when flag is absent")
     void parseArg_returnsDefaultWhenFlagAbsent() {
         String[] args = {"--port", "8080"};
-        assertEquals("localhost", Main.parseArg(args, "--host", "localhost"));
+        assertEquals("localhost", Main.parseArg(args, "--host", null, "localhost"));
     }
 
     @Test
     @DisplayName("parseArg returns defaultValue for empty args array")
     void parseArg_returnsDefaultForEmptyArgs() {
-        assertEquals("localhost", Main.parseArg(new String[0], "--host", "localhost"));
+        assertEquals("localhost", Main.parseArg(new String[0], "--host", null, "localhost"));
     }
 
     @Test
@@ -37,7 +37,7 @@ class MainTest {
     void parseArg_ignoresFlagWithNoFollowingValue() {
         // --host is the last element, so there is no value after it → default
         String[] args = {"--port", "8080", "--host"};
-        assertEquals("localhost", Main.parseArg(args, "--host", "localhost"));
+        assertEquals("localhost", Main.parseArg(args, "--host", null, "localhost"));
     }
 
     // ──── parsePort ─────────────────────────────────────────────────────────
@@ -46,20 +46,20 @@ class MainTest {
     @DisplayName("parsePort returns port value from --port flag")
     void parsePort_returnsPortForKnownFlag() {
         String[] args = {"--host", "localhost", "--port", "9999"};
-        assertEquals(9999, Main.parsePort(args));
+        assertEquals(9999, Main.parsePort(args, null));
     }
 
     @Test
     @DisplayName("parsePort returns 9090 when --port flag is absent")
     void parsePort_returnsDefaultWhenFlagAbsent() {
         String[] args = {"--host", "some-manager"};
-        assertEquals(9090, Main.parsePort(args));
+        assertEquals(9090, Main.parsePort(args, null));
     }
 
     @Test
     @DisplayName("parsePort returns 9090 for empty args array")
     void parsePort_returnsDefaultForEmptyArgs() {
-        assertEquals(9090, Main.parsePort(new String[0]));
+        assertEquals(9090, Main.parsePort(new String[0], null));
     }
 
     // ──── WorkerClient constructor validation ───────────────────────────────
