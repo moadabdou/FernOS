@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: fernos
       POSTGRES_USER: fernos_user
-      POSTGRES_PASSWORD: fernos_pass
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-fernos_pass}
     ports:
       - "5433:5432"
     volumes:
