@@ -1,0 +1,85 @@
+services:
+  # ── PostgreSQL database ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: fernos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fernos
+      POSTGRES_USER: fernos_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-fernos_pass}
+    ports:
+      - "5433:5432"
+    volumes:
+      - fernos-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fernos_user -d fernos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fernos-net
+
+  # ── Manager Spring Boot application ─────────────────────────────
+  manager:
+    build:
+      context: .
+      dockerfile: manager-node/Dockerfile
+    container_name: fernos-manager
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fernos
+      SPRING_DATASOURCE_USERNAME: fernos_user
+      SPRING_DATASOURCE_PASSWORD: fernos_pass
+      MANAGER_SECURITY_JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    networks:
+      - fernos-net
+
+  # ── Worker nodes (scale with: docker compose up --scale worker=N) ─
+  worker:
+    build:
+      context: .
+      dockerfile: worker-node/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      manager:
+        condition: service_healthy
+    environment:
+      MANAGER_HOST: manager
+      MANAGER_PORT: "9090"
+      WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-}
+      WORKER_DEV_MODE: "true"
+      MANAGER_SECURITY_JWT_SECRET: ${JWT_SECRET}
+    deploy:
+      replicas: 3
+    networks:
+      - fernos-net
+
+  # ── React Dashboard (Nginx) ─────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: fernos-dashboard
+    restart: unless-stopped
+    depends_on:
+      manager:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    networks:
+      - fernos-net
+
+volumes:
+  fernos-data:
+
+networks:
+  fernos-net:
+    driver: bridge
