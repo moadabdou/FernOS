@@ -186,11 +186,13 @@ public class DagScheduler {
                 continue;
             }
 
-            jobQueue.enqueue(job);
-            alreadySubmitted.add(job.getId());
-            enqueued++;
-            LOG.info("DagScheduler: enqueued job {} from workflow {} (deps satisfied)",
-                    job.getId(), workflowId);
+            // Atomically check if it was already submitted by another thread evaluating concurrently
+            if (alreadySubmitted.add(job.getId())) {
+                jobQueue.enqueue(job);
+                enqueued++;
+                LOG.info("DagScheduler: enqueued job {} from workflow {} (deps satisfied)",
+                        job.getId(), workflowId);
+            }
         }
     }
 
