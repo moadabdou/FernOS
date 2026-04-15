@@ -18,6 +18,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 import org.apache.juli.logging.Log;
+import org.springframework.stereotype.Service;
 
 /**
  * Thread-safe service that manages the lifecycle of in-memory workflows.
@@ -39,12 +40,18 @@ import org.apache.juli.logging.Log;
  * serialises state mutations while allowing concurrent reads.
  * The backing store is a {@link ConcurrentHashMap} for O(1) lookups.
  */
+@Service
 public class WorkflowManager {
 
     private final Log LOG = org.apache.juli.logging.LogFactory.getLog(WorkflowManager.class);
 
     private final Map<UUID, Workflow> store = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private final List<WorkflowEventListener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public void addListener(WorkflowEventListener listener) {
+        listeners.add(listener);
+    }
 
     // ──── Registration ──────────────────────────────────────────────────────
 
@@ -76,7 +83,22 @@ public class WorkflowManager {
         Workflow draftWorkflow = enforceStatus(workflow, WorkflowStatus.DRAFT);
 
         store.put(draftWorkflow.getId(), draftWorkflow);
+        listeners.forEach(l -> l.onWorkflowRegistered(draftWorkflow));
         return draftWorkflow;
+    }
+
+    /**
+     * Registers a workflow recovered from persistent storage.
+     * Bypasses DAG validation checks that require all jobs to be PENDING,
+     * retains the provided status, and does NOT fire the onWorkflowRegistered event.
+     *
+     * @param workflow the recovered workflow
+     * @return the registered workflow
+     */
+    public Workflow registerRecoveredWorkflow(Workflow workflow) {
+        Objects.requireNonNull(workflow, "workflow must not be null");
+        store.put(workflow.getId(), workflow);
+        return workflow;
     }
 
     // ──── Deletion ──────────────────────────────────────────────────────────
@@ -102,6 +124,7 @@ public class WorkflowManager {
             }
 
             store.remove(workflowId);
+            listeners.forEach(l -> l.onWorkflowDeleted(workflowId));
         } finally {
             lock.writeLock().unlock();
         }
@@ -173,6 +196,7 @@ public class WorkflowManager {
             // Preserve the existing status
             Workflow updatedWorkflow = enforceStatus(newWorkflow, existing.getStatus());
             store.put(workflowId, updatedWorkflow);
+            listeners.forEach(l -> l.onWorkflowUpdated(updatedWorkflow));
             return updatedWorkflow;
         } finally {
             lock.writeLock().unlock();
@@ -204,6 +228,7 @@ public class WorkflowManager {
 
             Workflow runningWorkflow = workflow.withStatus(WorkflowStatus.RUNNING);
             store.put(workflowId, runningWorkflow);
+            listeners.forEach(l -> l.onWorkflowExecuted(runningWorkflow));
             return runningWorkflow;
         } finally {
             lock.writeLock().unlock();
@@ -235,6 +260,7 @@ public class WorkflowManager {
 
             Workflow pausedWorkflow = workflow.withStatus(WorkflowStatus.PAUSED);
             store.put(workflowId, pausedWorkflow);
+            listeners.forEach(l -> l.onWorkflowPaused(pausedWorkflow));
             return pausedWorkflow;
         } finally {
             lock.writeLock().unlock();
@@ -266,6 +292,7 @@ public class WorkflowManager {
 
             Workflow runningWorkflow = workflow.withStatus(WorkflowStatus.RUNNING);
             store.put(workflowId, runningWorkflow);
+            listeners.forEach(l -> l.onWorkflowResumed(runningWorkflow));
             return runningWorkflow;
         } finally {
             lock.writeLock().unlock();
@@ -301,14 +328,15 @@ public class WorkflowManager {
                 // Already in DRAFT — nothing to reset, but still reset job statuses
                 Workflow resetWorkflow = resetJobStatuses(workflow);
                 store.put(workflowId, resetWorkflow);
+                listeners.forEach(l -> l.onWorkflowReset(resetWorkflow));
                 return resetWorkflow;
             }
 
             // Transition to DRAFT and reset all job statuses to PENDING
-            Workflow resetWorkflow = workflow.withStatus(WorkflowStatus.DRAFT);
-            resetWorkflow = resetJobStatuses(resetWorkflow);
-            store.put(workflowId, resetWorkflow);
-            return resetWorkflow;
+            final Workflow finalResetWorkflow = resetJobStatuses(workflow.withStatus(WorkflowStatus.DRAFT));
+            store.put(workflowId, finalResetWorkflow);
+            listeners.forEach(l -> l.onWorkflowReset(finalResetWorkflow));
+            return finalResetWorkflow;
         } finally {
             lock.writeLock().unlock();
         }
@@ -392,6 +420,7 @@ public class WorkflowManager {
 
             Workflow completedWorkflow = workflow.withStatus(WorkflowStatus.COMPLETED);
             store.put(workflowId, completedWorkflow);
+            listeners.forEach(l -> l.onWorkflowStatusChanged(completedWorkflow));
             return completedWorkflow;
         } finally {
             lock.writeLock().unlock();
@@ -421,6 +450,7 @@ public class WorkflowManager {
 
             Workflow failedWorkflow = workflow.withStatus(WorkflowStatus.FAILED);
             store.put(workflowId, failedWorkflow);
+            listeners.forEach(l -> l.onWorkflowStatusChanged(failedWorkflow));
             return failedWorkflow;
         } finally {
             lock.writeLock().unlock();
