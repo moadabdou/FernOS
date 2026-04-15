@@ -99,12 +99,12 @@ public interface JobDependencyRepository extends JpaRepository<JobDependencyEnti
 ```
 
 ## Acceptance Criteria
-- [ ] All 4 Flyway migrations created and apply cleanly
-- [ ] JPA entities map correctly to database tables
-- [ ] Repositories support CRUD operations and status queries
-- [ ] Cascade deletes work: deleting a workflow deletes its jobs and dependencies
-- [ ] `WorkflowRepositoryTest` and `JobDependencyRepositoryTest` pass with Testcontainers
-- [ ] Foreign key constraints enforce referential integrity
+- [x] All 4 Flyway migrations created and apply cleanly
+- [x] JPA entities map correctly to database tables
+- [x] Repositories support CRUD operations and status queries
+- [x] Cascade deletes work: deleting a workflow deletes its jobs and dependencies
+- [x] `WorkflowRepositoryTest` and `JobDependencyRepositoryTest` pass with Testcontainers
+- [x] Foreign key constraints enforce referential integrity
 
 ## Deliverables
 ```
