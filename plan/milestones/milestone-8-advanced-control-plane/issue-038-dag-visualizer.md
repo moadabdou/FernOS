@@ -16,6 +16,7 @@ Implement an interactive dependency graph visualizer that displays job workflows
 - [ ] Real-time color updates when job states change
 - [ ] Performance remains smooth with 100+ nodes
 
-## Dependencies
+## Dependencies 
+
 - Milestone 4 frontend foundation
 - Milestone 3 REST API for job/workflow data
