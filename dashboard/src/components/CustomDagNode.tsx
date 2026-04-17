@@ -76,7 +76,7 @@ const CustomDagNode: React.FC<CustomDagNodeProps> = ({ data }) => {
       className={`
         group relative px-5 py-4 rounded-xl border backdrop-blur-md
         min-w-[160px] max-w-[220px] min-h-[56px] flex items-center justify-center cursor-pointer
-        transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg
+        transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:z-[1000]
         ${s.bg} ${s.border} ${s.glow}
       `}
     >

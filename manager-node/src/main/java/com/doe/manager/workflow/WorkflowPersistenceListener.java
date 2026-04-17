@@ -92,10 +92,13 @@ public class WorkflowPersistenceListener implements WorkflowEventListener {
     @Transactional
     public void onWorkflowReset(Workflow workflow) {
         updateWorkflowStatus(workflow);
-        // Also reset job statuses
+        // Also reset job statuses and metadata
         for (WorkflowJob wj : workflow.getJobs()) {
             jobRepository.findById(wj.getJob().getId()).ifPresent(je -> {
                 je.setStatus(com.doe.core.model.JobStatus.PENDING);
+                je.setResult(null);
+                je.setWorkerId(null);
+                je.setRetryCount(0);
                 je.setUpdatedAt(Instant.now());
                 jobRepository.save(je);
             });

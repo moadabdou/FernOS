@@ -98,8 +98,11 @@ const DagPreviewPanel: React.FC<DagPreviewPanelProps> = ({ workflowId }) => {
             return {
               ...nd,
               data: {
-                ...nd.data,
+                ...newData,
+                label: newData.label || newData.jobId,
                 status: newData.status || 'PENDING',
+                result: newData.result || null,
+                workerId: newData.workerId || null,
               },
             };
           }

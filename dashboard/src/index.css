@@ -163,3 +163,8 @@ body {
   animation: edgePulseIndigo 1.6s ease-in-out infinite;
 }
 
+/* Ensure hovered nodes (and their tooltips) are above everything else */
+.react-flow__node:hover {
+  z-index: 1000 !important;
+}
+

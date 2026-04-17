@@ -10,20 +10,21 @@ import { Loader2, Activity, Users, Box, Hexagon, PlaySquare, CheckCircle, XCircl
 
 const RecentActivityFeed: React.FC = () => {
   const [page, setPage] = useState(0);
-  const { data: recent, isLoading } = useQuery({
+  const { data: recent, isLoading, isFetching } = useQuery({
     queryKey: ['activityFeed', page],
     queryFn: () => getJobs(page, 10, undefined, 'updatedAt,desc'),
     refetchInterval: 2500,
+    placeholderData: (prev) => prev,
   });
 
   return (
-    <div className="glass-panel p-6 flex flex-col h-full min-h-0 gap-4 relative">
+    <div className="glass-panel p-6 flex flex-col h-full min-h-[400px] gap-4 relative">
       <div className="flex items-center gap-2 mb-2">
         <Activity className="w-5 h-5 text-purple-500 dark:text-purple-400" />
         <h2 className="text-xl font-medium text-slate-700 dark:text-slate-200 tracking-wide">ACTIVITY FEED</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar pr-2 pb-2">
+      <div className={`flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar pr-2 pb-2 transition-opacity duration-300 ${isFetching ? 'opacity-70' : 'opacity-100'}`}>
         {isLoading ? (
            <div className="flex-1 flex items-center justify-center"><Loader2 className="w-8 h-8 text-purple-400 animate-spin" /></div>
         ) : recent?.content.length === 0 ? (
@@ -64,19 +65,24 @@ const RecentActivityFeed: React.FC = () => {
 const DashboardHome: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const paramId = searchParams.get('workflowId');
+  const sessionStoredId = sessionStorage.getItem('selectedWorkflowId');
 
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | undefined>(() => {
-    return paramId || sessionStorage.getItem('selectedWorkflowId') || undefined;
-  });
-
+  // If we have a param in URL, always save it to session storage
   useEffect(() => {
-    if (paramId && paramId !== selectedWorkflowId) {
-      setSelectedWorkflowId(paramId);
+    if (paramId) {
       sessionStorage.setItem('selectedWorkflowId', paramId);
-    } else if (selectedWorkflowId && !paramId) {
-      setSearchParams({ workflowId: selectedWorkflowId }, { replace: true });
     }
-  }, [paramId, selectedWorkflowId, setSearchParams]);
+  }, [paramId]);
+
+  // If we return to home and there's no param in URL, but we have one in session, restore it to URL
+  useEffect(() => {
+    if (!paramId && sessionStoredId) {
+       setSearchParams({ workflowId: sessionStoredId }, { replace: true });
+    }
+  }, [paramId, sessionStoredId, setSearchParams]);
+
+  const selectedWorkflowId = paramId || sessionStoredId || undefined;
+
 
   const { data: stats, isLoading } = useSystemStats();
 

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getWorkflows } from '../api/workflows';
 import { useWorkflowActions } from '../hooks/useWorkflowActions';
-import { Loader2, Plus, Filter, ChevronLeft, ChevronRight, GitMerge, Play, Pause, RotateCcw, Trash2, Eye } from 'lucide-react';
+import { Loader2, Filter, ChevronLeft, ChevronRight, GitMerge, Play, Pause, RotateCcw, Trash2, Eye } from 'lucide-react';
 import type { WorkflowSummary } from '../types/api';
 
 const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
@@ -25,20 +25,8 @@ const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
     <div className="relative group pl-8">
       {/* Connector Line */}
       <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gradient-to-b from-white/40 to-transparent dark:from-white/10 ml-0.5 mt-8 group-last:hidden" />
-      
-      <div className="glass-card flex items-center p-3 rounded-2xl border border-white/60 dark:border-white/5 shadow-sm hover:shadow dark:bg-slate-800/50 transition-all gap-4">
-        
-        {/* Icon indicator */}
-        <div className="absolute left-[-2px] flex items-center justify-center w-8 h-8 rounded-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 shadow-sm z-10 transition-colors">
-          <span className={`w-3 h-3 rounded-full ${
-            workflow.status === 'RUNNING' ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse' :
-            workflow.status === 'COMPLETED' ? 'bg-emerald-500' :
-            workflow.status === 'FAILED' ? 'bg-red-500' :
-            workflow.status === 'PAUSED' ? 'bg-yellow-500' :
-            'bg-slate-400'
-          }`}></span>
-        </div>
 
+      <div className="glass-card flex items-center p-3 rounded-2xl border border-white/60 dark:border-white/5 shadow-sm hover:shadow dark:bg-slate-800/50 transition-all gap-4">
         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] items-center w-full gap-4 text-sm pl-10 pr-4">
           {/* Name */}
           <div className="font-bold text-slate-700 dark:text-slate-200 truncate">
@@ -47,13 +35,12 @@ const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
 
           {/* Status Badge */}
           <div>
-            <span className={`px-2 py-1 rounded text-xs font-bold tracking-wide uppercase shadow-sm border ${
-              workflow.status === 'RUNNING' ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' :
-              workflow.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' :
-              workflow.status === 'FAILED' ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' :
-              workflow.status === 'PAUSED' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800' :
-              'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-            }`}>
+            <span className={`px-2 py-1 rounded text-xs font-bold tracking-wide uppercase shadow-sm border ${workflow.status === 'RUNNING' ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' :
+                workflow.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' :
+                  workflow.status === 'FAILED' ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' :
+                    workflow.status === 'PAUSED' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800' :
+                      'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+              }`}>
               {workflow.status}
             </span>
           </div>
@@ -70,16 +57,16 @@ const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
 
           {/* Actions */}
           <div className="flex items-center gap-2 justify-end">
-            <button 
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition" 
+            <button
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
               title="View DAG"
               onClick={() => navigate(`/?workflowId=${workflow.id}`)}
             >
               <Eye className="w-4 h-4" />
             </button>
             {(workflow.status === 'DRAFT' || workflow.status === 'PAUSED') && (
-              <button 
-                className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition disabled:opacity-50" 
+              <button
+                className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition disabled:opacity-50"
                 title={workflow.status === 'PAUSED' ? "Resume" : "Execute"}
                 onClick={() => workflow.status === 'PAUSED' ? resume() : execute()}
                 disabled={isExecuting || isResuming}
@@ -88,8 +75,8 @@ const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
               </button>
             )}
             {workflow.status === 'RUNNING' && (
-              <button 
-                className="p-1.5 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition disabled:opacity-50" 
+              <button
+                className="p-1.5 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition disabled:opacity-50"
                 title="Pause"
                 onClick={() => pause()}
                 disabled={isPausing}
@@ -98,8 +85,8 @@ const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
               </button>
             )}
             {workflow.status !== 'RUNNING' && workflow.status !== 'DRAFT' && (
-              <button 
-                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50" 
+              <button
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50"
                 title="Reset"
                 onClick={() => reset()}
                 disabled={isResetting}
@@ -108,8 +95,8 @@ const WorkflowRow: React.FC<{ workflow: WorkflowSummary }> = ({ workflow }) => {
               </button>
             )}
             {workflow.status !== 'RUNNING' && (
-              <button 
-                className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition disabled:opacity-50" 
+              <button
+                className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition disabled:opacity-50"
                 title="Delete"
                 onClick={async () => {
                   if (window.confirm('Are you sure you want to delete this workflow?')) {
@@ -175,12 +162,6 @@ const WorkflowsView: React.FC = () => {
             </select>
           </div>
 
-          <button 
-            className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 gap-2 bg-white/50 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 border border-white/60 dark:border-white/10 rounded-xl text-purple-600 dark:text-purple-400 font-bold transition-all shadow-sm"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:block">New Workflow</span>
-          </button>
         </div>
       </div>
 
@@ -221,14 +202,14 @@ const WorkflowsView: React.FC = () => {
             Showing page {workflowsResponse!.number + 1} of {workflowsResponse!.totalPages}
           </div>
           <div className="flex items-center gap-2">
-            <button 
+            <button
               disabled={page === 0}
               onClick={() => setPage(page - 1)}
               className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/50 border border-transparent disabled:opacity-50 disabled:hover:bg-transparent"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <button 
+            <button
               disabled={page >= workflowsResponse!.totalPages - 1}
               onClick={() => setPage(page + 1)}
               className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/50 border border-transparent disabled:opacity-50 disabled:hover:bg-transparent"
