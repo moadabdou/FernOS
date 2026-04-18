@@ -337,7 +337,8 @@ public class WorkerClient {
                     .orElseThrow(() -> new UnknownTaskTypeException(type));
         } catch (UnknownTaskTypeException e) {
             LOG.warn("Worker {}: job {} FAILED — unknown task type: {}", workerId, jobIdStr, type);
-            sendJobResult(jobIdStr, "FAILED", "Unknown task type: " + type, List.of(), workerId);
+            context.log("ERROR: Unknown task type: " + type);
+            sendJobResult(jobIdStr, "FAILED", "Unknown task type: " + type, context.getBufferedLogs(), workerId);
             return;
         }
 
@@ -361,6 +362,7 @@ public class WorkerClient {
                 taskFuture.cancel(true);
                 status = "FAILED";
                 output = "Job execution timed out after " + timeoutMs + "ms";
+                context.log("ERROR: " + output);
                 LOG.warn("Worker {}: job {} FAILED — timeout", workerId, jobIdStr);
             } catch (java.util.concurrent.CancellationException e) {
                 status = "CANCELLED";
@@ -375,6 +377,7 @@ public class WorkerClient {
                 } else {
                     status = "FAILED";
                     output = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+                    context.log("ERROR: " + output);
                     if (cause instanceof UnknownTaskTypeException) {
                         LOG.warn("Worker {}: job {} FAILED — unknown task type: {}", workerId, jobIdStr, cause.getMessage());
                     } else {
@@ -423,7 +426,7 @@ public class WorkerClient {
             JsonObject resultBody = new JsonObject();
             resultBody.addProperty("jobId", jobId);
             resultBody.addProperty("status", status);
-            resultBody.addProperty("summary", summary);
+            resultBody.addProperty("output", summary);
             resultBody.add("logs", GSON.toJsonTree(logs));
             byte[] resultBytes = ProtocolEncoder.encode(MessageType.JOB_RESULT, GSON.toJson(resultBody));
             queue.put(new OutboundMessage(resultBytes,

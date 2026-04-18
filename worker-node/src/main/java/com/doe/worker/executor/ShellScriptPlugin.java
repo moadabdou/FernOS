@@ -63,12 +63,27 @@ public class ShellScriptPlugin implements TaskExecutor {
         Process process = pb.start();
         activeProcess.set(process);
 
+        StringBuilder resultBuilder = new StringBuilder();
         var outputFuture = CompletableFuture.supplyAsync(
                 () -> {
-                    try {
-                        return captureOutput(process.getInputStream());
+                    try (InputStream is = process.getInputStream();
+                         var reader = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8))) {
+                        String line;
+                        boolean truncated = false;
+                        while ((line = reader.readLine()) != null) {
+                            context.log(line);
+                            if (!truncated) {
+                                if (resultBuilder.length() + line.length() + 1 > MAX_OUTPUT_BYTES) {
+                                    truncated = true;
+                                    resultBuilder.append(TRUNCATION_SUFFIX);
+                                } else {
+                                    resultBuilder.append(line).append("\n");
+                                }
+                            }
+                        }
+                        return resultBuilder.toString();
                     } catch (IOException e) {
-                        return "";
+                        return resultBuilder.toString();
                     }
                 });
 
@@ -113,26 +128,4 @@ public class ShellScriptPlugin implements TaskExecutor {
         }
     }
 
-    private static String captureOutput(InputStream in) throws IOException {
-        byte[] buffer = new byte[MAX_OUTPUT_BYTES];
-        int totalRead = 0;
-
-        int read;
-        while (totalRead < MAX_OUTPUT_BYTES
-                && (read = in.read(buffer, totalRead, MAX_OUTPUT_BYTES - totalRead)) != -1) {
-            totalRead += read;
-        }
-
-        boolean truncated = false;
-        if (totalRead == MAX_OUTPUT_BYTES) {
-            int extra = in.read();
-            if (extra != -1) {
-                truncated = true;
-                in.transferTo(java.io.OutputStream.nullOutputStream());
-            }
-        }
-
-        String output = new String(buffer, 0, totalRead, StandardCharsets.UTF_8);
-        return truncated ? output + TRUNCATION_SUFFIX : output;
-    }
 }

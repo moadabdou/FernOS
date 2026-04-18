@@ -377,7 +377,7 @@ public class ManagerServer implements SmartLifecycle {
     private void handleJobResult(UUID workerId, WorkerConnection localConnection, Message message) {
         JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
         String status = json.has("status") ? json.get("status").getAsString() : "FAILED";
-        String summary = json.has("summary") ? json.get("summary").getAsString() : "";
+        String summary = json.has("output") ? json.get("output").getAsString() : (json.has("summary") ? json.get("summary").getAsString() : "");
         List<String> logs = json.has("logs") ? GSON.fromJson(json.get("logs"), new com.google.gson.reflect.TypeToken<List<String>>(){}.getType()) : List.of();
         
         if (!json.has("jobId")) {

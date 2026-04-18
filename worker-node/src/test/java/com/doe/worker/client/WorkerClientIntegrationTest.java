@@ -562,6 +562,18 @@ class WorkerClientIntegrationTest {
                     "Job status should be FAILED for unknown type");
             assertTrue(result.get("output").getAsString().contains("this-type-does-not-exist"),
                     "Error output should mention the unknown type");
+            
+            // Verify error is logged to context
+            assertTrue(result.has("logs"), "JOB_RESULT should contain 'logs'");
+            var logs = result.getAsJsonArray("logs");
+            boolean foundError = false;
+            for (var log : logs) {
+                if (log.getAsString().contains("ERROR: Unknown task type: this-type-does-not-exist")) {
+                    foundError = true;
+                    break;
+                }
+            }
+            assertTrue(foundError, "Logs should contain the error message");
         }
     }
 
@@ -698,6 +710,17 @@ class WorkerClientIntegrationTest {
             
             assertEquals("FAILED", capturedResult.get().get("status").getAsString());
             assertTrue(capturedResult.get().get("output").getAsString().contains("timed out"));
+
+            // Verify error is logged to context
+            var logs = capturedResult.get().getAsJsonArray("logs");
+            boolean foundError = false;
+            for (var log : logs) {
+                if (log.getAsString().contains("ERROR: Job execution timed out")) {
+                    foundError = true;
+                    break;
+                }
+            }
+            assertTrue(foundError, "Logs should contain the timeout error message");
         }
     }
 

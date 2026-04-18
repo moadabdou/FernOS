@@ -32,6 +32,9 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
+# Install Python 3 and Bash
+RUN apk add --no-cache python3 bash
+
 # Copy the fat JAR from the builder stage (explicit filename to avoid COPY glob ambiguity)
 COPY --from=builder /build/worker-node/target/worker-node-1.0.0-SNAPSHOT.jar app.jar
 
