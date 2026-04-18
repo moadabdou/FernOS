@@ -232,12 +232,6 @@ public class DagScheduler implements WorkflowEventListener {
             // Check if all dependencies are COMPLETED
             if (areDependenciesSatisfied(wj, workflow)) {
                 ready.add(wj);
-            } else if (failFast) {
-                // Check if any dependency FAILED — if so, this job should never run
-                if (hasFailedDependency(wj, workflow)) {
-                    alreadySubmitted.add(job.getId());
-                    failJobWithUnmetDependencies(workflow.getId(), job);
-                }
             }
         }
 
@@ -325,44 +319,107 @@ public class DagScheduler implements WorkflowEventListener {
      */
     private void checkTerminalState(Workflow workflow) {
         UUID workflowId = workflow.getId();
-        boolean allTerminal = true;
-        boolean anyNonSuccess = false; // FAILED or CANCELLED
+        boolean allFinished = true;
+        boolean allSuccessful = true;
 
         for (WorkflowJob wj : workflow.getJobs()) {
-            JobStatus status = wj.getJob().getStatus();
-            switch (status) {
-                case COMPLETED:
-                    // terminal, success — ok
-                    break;
-                case FAILED:
-                case CANCELLED:
-                    // terminal, non-success
-                    anyNonSuccess = true;
-                    break;
-                default:
-                    // PENDING, ASSIGNED, RUNNING — not yet terminal
-                    allTerminal = false;
-                    break;
+            if (!isEffectivelyComplete(wj, workflow)) {
+                allFinished = false;
+                break;
+            }
+            if (wj.getJob().getStatus() != JobStatus.COMPLETED) {
+                allSuccessful = false;
             }
         }
 
-        if (allTerminal && anyNonSuccess) {
-            // All jobs terminal, at least one failed/cancelled
-            try {
-                workflowManager.failWorkflow(workflowId);
-                LOG.info("DagScheduler: workflow {} FAILED (at least one job failed/cancelled)", workflowId);
-            } catch (Exception e) {
-                LOG.debug("Could not fail workflow {} (may already be terminal): {}", workflowId, e.getMessage());
-            }
-        } else if (allTerminal && !anyNonSuccess) {
-            // All jobs completed successfully
-            try {
-                workflowManager.completeWorkflow(workflowId);
-                LOG.info("DagScheduler: workflow {} COMPLETED (all jobs done)", workflowId);
-            } catch (Exception e) {
-                LOG.debug("Could not complete workflow {} (may already be terminal): {}", workflowId, e.getMessage());
+        if (allFinished) {
+            if (allSuccessful) {
+                try {
+                    workflowManager.completeWorkflow(workflowId);
+                    LOG.info("DagScheduler: workflow {} COMPLETED (all jobs done)", workflowId);
+                } catch (Exception e) {
+                    LOG.debug("Could not complete workflow {} (may already be terminal): {}", workflowId, e.getMessage());
+                }
+            } else {
+                try {
+                    workflowManager.failWorkflow(workflowId);
+                    LOG.info("DagScheduler: workflow {} FAILED (some jobs failed, cancelled, or blocked)", workflowId);
+                } catch (Exception e) {
+                    LOG.debug("Could not fail workflow {} (may already be terminal): {}", workflowId, e.getMessage());
+                }
             }
         }
+    }
+
+    /**
+     * Recursively checks if a job is "effectively complete".
+     * A job is effectively complete if:
+     * 1. It is in a terminal state (COMPLETED, FAILED, CANCELLED)
+     * 2. It is PENDING but all of its dependencies are effectively complete.
+     *
+     * <p>Note: a PENDING job whose dependencies are terminal but 
+     * not all COMPLETED will never run, hence it's effectively complete.
+     */
+    private boolean isEffectivelyComplete(WorkflowJob wj, Workflow workflow) {
+        JobStatus status = wj.getJob().getStatus();
+        if (status == JobStatus.COMPLETED || status == JobStatus.FAILED || status == JobStatus.CANCELLED) {
+            return true;
+        }
+
+        // If it's not PENDING (e.g. RUNNING, ASSIGNED), it's not finished
+        if (status != JobStatus.PENDING) {
+            return false;
+        }
+
+        // It's PENDING. Check dependencies.
+        // If it has no dependencies, it's not "complete" yet (it's ready to run)
+        if (wj.getDependencies().isEmpty()) {
+            return false;
+        }
+
+        // If ALL dependencies are COMPLETED, this job is ready to run, so not "complete"
+        boolean allDepsCompleted = true;
+        for (UUID depId : wj.getDependencies()) {
+            WorkflowJob depWj = workflow.getJob(depId);
+            if (depWj == null || depWj.getJob().getStatus() != JobStatus.COMPLETED) {
+                allDepsCompleted = false;
+                break;
+            }
+        }
+        if (allDepsCompleted) {
+            return false;
+        }
+
+        // Check if it's blocked: any dependency is terminal but not COMPLETED,
+        // or recursively blocked.
+        for (UUID depId : wj.getDependencies()) {
+            WorkflowJob depWj = workflow.getJob(depId);
+            if (depWj == null) continue; // Should not happen
+
+            // If a dependency is FAILED or CANCELLED, this job is blocked (complete)
+            JobStatus depStatus = depWj.getJob().getStatus();
+            if (depStatus == JobStatus.FAILED || depStatus == JobStatus.CANCELLED) {
+                return true;
+            }
+
+            // If a dependency is PENDING, we must check if it's blocked recursively
+            if (depStatus == JobStatus.PENDING) {
+                if (isEffectivelyComplete(depWj, workflow)) {
+                    // Dependency is blocked, so this job is blocked
+                    return true;
+                } else {
+                    // Dependency is still "potentially runnable", so this job is not blocked
+                    return false;
+                }
+            }
+            
+            // If dependency is RUNNING or ASSIGNED, this job is not blocked
+            if (depStatus == JobStatus.RUNNING || depStatus == JobStatus.ASSIGNED) {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /**

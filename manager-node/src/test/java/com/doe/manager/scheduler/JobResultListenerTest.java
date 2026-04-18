@@ -180,12 +180,12 @@ class JobResultListenerTest {
         Job dequeuedA = jobQueue.dequeue();
         simulateJobFailed(dequeuedA, workflow.getId());
 
-        // A should be FAILED, B and C should be CANCELLED (fail-fast, PENDING→CANCELLED)
+        // A should be FAILED, B and C should stay PENDING (new refactor)
         assertEquals(JobStatus.FAILED, jobA.getJob().getStatus());
-        assertEquals(JobStatus.CANCELLED, jobB.getJob().getStatus());
-        assertEquals(JobStatus.CANCELLED, jobC.getJob().getStatus());
+        assertEquals(JobStatus.PENDING, jobB.getJob().getStatus());
+        assertEquals(JobStatus.PENDING, jobC.getJob().getStatus());
 
-        // Workflow should be FAILED
+        // Workflow should be FAILED (since A failed and B/C are blocked)
         Workflow failed = workflowManager.getWorkflow(workflow.getId());
         assertEquals(WorkflowStatus.FAILED, failed.getStatus());
     }
@@ -252,8 +252,10 @@ class JobResultListenerTest {
         Job dequeuedA = jobQueue.dequeue();
         simulateJobCancelled(dequeuedA, workflow.getId());
 
-        // In fail-fast mode, B should be CANCELLED (PENDING→CANCELLED)
-        assertEquals(JobStatus.CANCELLED, jobB.getJob().getStatus());
+        // B should stay PENDING
+        assertEquals(JobStatus.PENDING, jobB.getJob().getStatus());
+        // Workflow should fail because A cancelled and B is blocked
+        assertEquals(WorkflowStatus.FAILED, workflowManager.getWorkflow(workflow.getId()).getStatus());
     }
 
     // ──── onJobRequeued ──────────────────────────────────────────────────────
@@ -364,6 +366,44 @@ class JobResultListenerTest {
         simulateJobComplete(dequeuedC, workflow.getId());
         assertEquals(1, jobQueue.size());
         assertEquals(d, jobQueue.dequeue().getId());
+    }
+
+    @Test
+    @DisplayName("Complex DAG with failure: workflow fails when all reachable jobs finish")
+    void complexDag_withFailure_failsWorkflowWhenBlocked() {
+        // A -> B -> C
+        //   -> D (independent fail)
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        UUID c = UUID.randomUUID();
+        UUID d = UUID.randomUUID();
+
+        WorkflowJob jobA = makeJob(a, "A");
+        WorkflowJob jobB = makeJob(b, "B", List.of(a));
+        WorkflowJob jobC = makeJob(c, "C", List.of(b));
+        WorkflowJob jobD = makeJob(d, "D"); // No dependencies
+
+        Workflow workflow = createAndExecuteWorkflow("complex-fail", List.of(jobA, jobB, jobC, jobD));
+
+        // Enqueue A and D
+        jobQueue.enqueue(jobA.getJob());
+        jobQueue.enqueue(jobD.getJob());
+
+        // Fail A
+        simulateJobFailed(jobQueue.dequeue(), workflow.getId());
+        // Workflow still RUNNING because D is enqueued (pending execution)
+        assertEquals(WorkflowStatus.RUNNING, workflowManager.getWorkflow(workflow.getId()).getStatus());
+
+        // Complete D
+        simulateJobComplete(jobQueue.dequeue(), workflow.getId());
+
+        // Now A is FAILED, B is PENDING (blocked), C is PENDING (blocked), D is COMPLETED.
+        // The workflow should transition to FAILED.
+        assertEquals(WorkflowStatus.FAILED, workflowManager.getWorkflow(workflow.getId()).getStatus());
+        assertEquals(JobStatus.FAILED, jobA.getJob().getStatus());
+        assertEquals(JobStatus.PENDING, jobB.getJob().getStatus());
+        assertEquals(JobStatus.PENDING, jobC.getJob().getStatus());
+        assertEquals(JobStatus.COMPLETED, jobD.getJob().getStatus());
     }
     /** Returns a no-op EngineEventListener suitable for unit tests that don't need persistence. */
     private static EngineEventListener noOpListener() {
