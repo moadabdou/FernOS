@@ -27,6 +27,12 @@ public class Main {
         int port = parsePort(args, System.getenv("MANAGER_PORT"));
         String authToken = parseArg(args, "--auth-token", System.getenv("WORKER_AUTH_TOKEN"), null);
         boolean devMode = hasArg(args, "--dev") || "true".equalsIgnoreCase(System.getenv("WORKER_DEV_MODE"));
+        
+        // MinIO Storage Config
+        String minioEndpoint = parseArg(args, "--minio-endpoint", System.getenv("MINIO_ENDPOINT"), "http://localhost:9000");
+        String minioAccessKey = parseArg(args, "--minio-access-key", System.getenv("MINIO_ACCESS_KEY"), "admin");
+        String minioSecretKey = parseArg(args, "--minio-secret-key", System.getenv("MINIO_SECRET_KEY"), "password123");
+        String minioBucket = parseArg(args, "--minio-bucket", System.getenv("MINIO_BUCKET"), "fernos-storage");
 
         if (authToken == null || authToken.isBlank()) {
             if (devMode) {
@@ -63,6 +69,7 @@ public class Main {
                 .unstarted(client::shutdown));
 
         LOG.info("Starting Worker Node, connecting to {}:{}...", host, port);
+        LOG.info("MinIO Configured: endpoint={}, bucket={}", minioEndpoint, minioBucket);
         client.start();
     }
 

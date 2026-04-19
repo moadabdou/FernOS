@@ -41,7 +41,8 @@ RUN apk add --no-cache python3 py3-pip bash \
     docker \
     kubernetes \
     papermill \
-    pandas
+    pandas \
+    minio
 
 # Copy the fat JAR from the builder stage (explicit filename to avoid COPY glob ambiguity)
 COPY --from=builder /build/worker-node/target/worker-node-1.0.0-SNAPSHOT.jar app.jar

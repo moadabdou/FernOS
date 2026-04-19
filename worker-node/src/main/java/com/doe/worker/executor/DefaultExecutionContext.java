@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -29,7 +30,19 @@ public class DefaultExecutionContext implements ExecutionContext {
     private volatile boolean logsTruncated = false;
 
     public DefaultExecutionContext() {
-        this(Collections.emptyMap(), Collections.emptyMap(), new NoOpXComClient(), DEFAULT_MAX_LOG_SIZE);
+        this(loadMinioEnvVars(), Collections.emptyMap(), new NoOpXComClient(), DEFAULT_MAX_LOG_SIZE);
+    }
+    
+    private static Map<String, String> loadMinioEnvVars() {
+        Map<String, String> vars = new HashMap<>();
+        String[] minioKeys = {"MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET"};
+        for (String key : minioKeys) {
+            String value = System.getenv(key);
+            if (value != null) {
+                vars.put(key, value);
+            }
+        }
+        return Collections.unmodifiableMap(vars);
     }
 
     public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient) {
