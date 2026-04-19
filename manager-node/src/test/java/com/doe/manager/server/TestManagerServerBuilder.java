@@ -27,6 +27,7 @@ public class TestManagerServerBuilder {
         @Override public void onJobFailed(UUID j, UUID w, String s, Instant t) {}
         @Override public void onJobCancelled(UUID j, UUID w, String s, Instant t) {}
         @Override public void onJobRequeued(UUID j, int retry, Instant t) {}
+        @Override public void onJobSkipped(UUID j, Instant t) {}
     };
 
     public static ManagerServer build(int port, long check, long timeout) {

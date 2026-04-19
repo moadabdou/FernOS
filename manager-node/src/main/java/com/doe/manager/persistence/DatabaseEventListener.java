@@ -234,6 +234,15 @@ public class DatabaseEventListener implements EngineEventListener {
         });
     }
 
+    @Override
+    @Transactional
+    public void onJobSkipped(UUID jobId, Instant updatedAt) {
+        updateJobEntity(jobId, entity -> {
+            entity.setStatus(JobStatus.SKIPPED);
+            entity.setUpdatedAt(updatedAt);
+        }, "SKIPPED");
+    }
+
     // ─── Internals ───────────────────────────────────────────────────────────
 
     private void updateWorkerJobCountFromRegistry(UUID workerId) {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Job } from '../types/api';
 import { cancelJob, retryJob, getJobLogsUrl } from '../api/jobs';
 import { useQueryClient } from '@tanstack/react-query';
-import { Box, PlaySquare, CheckSquare, XSquare, Clock, ChevronDown, ChevronRight, HardDrive, MoreVertical, XCircle, Trash2, ExternalLink, FileText, RotateCcw } from 'lucide-react';
+import { Box, PlaySquare, CheckSquare, XSquare, Clock, ChevronDown, ChevronRight, HardDrive, MoreVertical, XCircle, Trash2, ExternalLink, FileText, RotateCcw, SkipForward } from 'lucide-react';
 import { getWorkerTheme } from '../utils/workerColors';
 
 interface JobRowProps {
@@ -88,6 +88,10 @@ const JobRow: React.FC<JobRowProps> = ({ job }) => {
     case 'CANCELLED':
       progress = 100;
       statusTheme = { text: 'text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800', bar: 'from-slate-300 to-slate-400', icon: XCircle };
+      break;
+    case 'SKIPPED':
+      progress = 100;
+      statusTheme = { text: 'text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-950/30', bar: 'from-indigo-300 to-indigo-400', icon: SkipForward };
       break;
   }
 

@@ -568,7 +568,8 @@ public class WorkflowManager {
             case RUNNING    -> 2;
             case COMPLETED  -> 3;
             case FAILED     -> 3; // terminal, same level as completed
-            case CANCELLED  -> 3; // terminal, same level as completed
+            case CANCELLED  -> 3;
+            case SKIPPED    -> 3; // terminal
         };
     }
 

@@ -20,7 +20,7 @@ public enum JobStatus {
     PENDING {
         @Override
         public Set<JobStatus> validTransitions() {
-            return EnumSet.of(ASSIGNED, CANCELLED);
+            return EnumSet.of(ASSIGNED, CANCELLED, SKIPPED);
         }
     },
 
@@ -53,6 +53,13 @@ public enum JobStatus {
     },
 
     CANCELLED {
+        @Override
+        public Set<JobStatus> validTransitions() {
+            return EnumSet.of(PENDING);
+        }
+    },
+
+    SKIPPED {
         @Override
         public Set<JobStatus> validTransitions() {
             return EnumSet.of(PENDING);

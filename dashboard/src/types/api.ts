@@ -1,6 +1,6 @@
 export interface Job {
   id: string;
-  status: 'PENDING' | 'ASSIGNED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'PENDING' | 'ASSIGNED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'SKIPPED';
   payload: string;
   result: string | null;
   workerId: string | null;

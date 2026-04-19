@@ -109,6 +109,12 @@ public class JobResultListener implements EngineEventListener, WorkflowEventList
         // Not relevant for DAG scheduling — CrashRecoveryHandler handles this
     }
 
+    @Override
+    public void onJobSkipped(UUID jobId, Instant updatedAt) {
+        // No-op — skipping is a result of workflow termination or blocking,
+        // re-evaluation is already handled or not needed.
+    }
+
     // ──── Internal logic ─────────────────────────────────────────────────────
 
     /**

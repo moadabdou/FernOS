@@ -333,6 +333,13 @@ public class DagScheduler implements WorkflowEventListener {
         }
 
         if (allFinished) {
+            // Before marking workflow as terminal, transition any remaining PENDING jobs to SKIPPED
+            for (WorkflowJob wj : workflow.getJobs()) {
+                if (wj.getJob().getStatus() == JobStatus.PENDING) {
+                    skipJob(workflowId, wj.getJob());
+                }
+            }
+
             if (allSuccessful) {
                 try {
                     workflowManager.completeWorkflow(workflowId);
@@ -348,6 +355,20 @@ public class DagScheduler implements WorkflowEventListener {
                     LOG.debug("Could not fail workflow {} (may already be terminal): {}", workflowId, e.getMessage());
                 }
             }
+        }
+    }
+
+    /**
+     * Marks a job as SKIPPED because it was PENDING when the workflow terminated.
+     */
+    private void skipJob(UUID workflowId, Job job) {
+        try {
+            job.transition(JobStatus.SKIPPED);
+            job.setResult("Skipped: workflow terminated before this job could run");
+            LOG.info("DagScheduler: marked job {} in workflow {} as SKIPPED", job.getId(), workflowId);
+            eventListener.onJobSkipped(job.getId(), job.getUpdatedAt());
+        } catch (IllegalStateException e) {
+            // skip if naturally progressed meanwhile
         }
     }
 
@@ -470,7 +491,28 @@ public class DagScheduler implements WorkflowEventListener {
 
     @Override
     public void onWorkflowResumed(Workflow workflow) {
-        // No-op
+        UUID workflowId = workflow.getId();
+        LOG.info("DagScheduler: workflow {} resumed, transitioning SKIPPED jobs back to PENDING", workflowId);
+        
+        for (WorkflowJob wj : workflow.getJobs()) {
+            Job job = wj.getJob();
+            if (job.getStatus() == JobStatus.SKIPPED) {
+                try {
+                    job.transition(JobStatus.PENDING);
+                    job.setResult(null);
+                    // Ensure the scheduler forgets this job so it can be re-submitted
+                    forgetJob(workflowId, job.getId());
+                    // Notify listener so DB is updated
+                    eventListener.onJobRequeued(job.getId(), job.getRetryCount(), job.getUpdatedAt());
+                    LOG.info("DagScheduler: reverted job {} in workflow {} from SKIPPED to PENDING", job.getId(), workflowId);
+                } catch (IllegalStateException e) {
+                    LOG.warn("Could not transition job {} from SKIPPED to PENDING: {}", job.getId(), e.getMessage());
+                }
+            }
+        }
+        
+        // Trigger immediate evaluation
+        evaluateWorkflow(workflowId);
     }
 
     @Override

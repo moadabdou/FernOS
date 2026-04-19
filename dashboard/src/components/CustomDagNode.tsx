@@ -8,7 +8,7 @@ interface CustomDagNodeProps {
   data: {
     label: string;
     jobId: string;
-    status: 'PENDING' | 'ASSIGNED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+    status: 'PENDING' | 'ASSIGNED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'SKIPPED';
     workflowId?: string;
     workerId?: string | null;
     createdAt?: string;
@@ -60,6 +60,13 @@ const getNodeStyle = (status: string) => {
         border: 'border-slate-600/30',
         bg: 'bg-slate-900/40',
         dot: 'bg-slate-600',
+        glow: '',
+      };
+    case 'SKIPPED':
+      return {
+        border: 'border-indigo-500/30',
+        bg: 'bg-indigo-950/20',
+        dot: 'bg-indigo-400/50',
         glow: '',
       };
     default:

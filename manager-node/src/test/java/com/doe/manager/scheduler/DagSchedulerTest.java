@@ -420,12 +420,12 @@ class DagSchedulerTest {
         tick(workflow.getId());
         Job dequeuedA = jobQueue.dequeue();
 
-        // Fail A → B and C should be CANCELLED (PENDING→CANCELLED is valid) and workflow should FAIL
+        // Fail A → B and C should be SKIPPED (as workflow is now terminal) and workflow should FAIL
         simulateJobFailure(dequeuedA, workflow.getId());
 
         assertEquals(JobStatus.FAILED, jobA.getJob().getStatus());
-        assertEquals(JobStatus.CANCELLED, jobB.getJob().getStatus());
-        assertEquals(JobStatus.CANCELLED, jobC.getJob().getStatus());
+        assertEquals(JobStatus.SKIPPED, jobB.getJob().getStatus());
+        assertEquals(JobStatus.SKIPPED, jobC.getJob().getStatus());
 
         Workflow failed = workflowManager.getWorkflow(workflow.getId());
         assertEquals(WorkflowStatus.FAILED, failed.getStatus());
@@ -546,6 +546,7 @@ class DagSchedulerTest {
             public void onJobFailed(java.util.UUID j, java.util.UUID w, String s, java.time.Instant t) {}
             public void onJobCancelled(java.util.UUID j, java.util.UUID w, String s, java.time.Instant t) {}
             public void onJobRequeued(java.util.UUID j, int rc, java.time.Instant t) {}
+            public void onJobSkipped(java.util.UUID j, java.time.Instant t) {}
         };
     }
 }

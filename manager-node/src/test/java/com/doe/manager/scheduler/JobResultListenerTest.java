@@ -180,10 +180,10 @@ class JobResultListenerTest {
         Job dequeuedA = jobQueue.dequeue();
         simulateJobFailed(dequeuedA, workflow.getId());
 
-        // A should be FAILED, B and C should stay PENDING (new refactor)
+        // A should be FAILED, B and C should be SKIPPED (as workflow is now terminal)
         assertEquals(JobStatus.FAILED, jobA.getJob().getStatus());
-        assertEquals(JobStatus.PENDING, jobB.getJob().getStatus());
-        assertEquals(JobStatus.PENDING, jobC.getJob().getStatus());
+        assertEquals(JobStatus.SKIPPED, jobB.getJob().getStatus());
+        assertEquals(JobStatus.SKIPPED, jobC.getJob().getStatus());
 
         // Workflow should be FAILED (since A failed and B/C are blocked)
         Workflow failed = workflowManager.getWorkflow(workflow.getId());
@@ -252,8 +252,8 @@ class JobResultListenerTest {
         Job dequeuedA = jobQueue.dequeue();
         simulateJobCancelled(dequeuedA, workflow.getId());
 
-        // B should stay PENDING
-        assertEquals(JobStatus.PENDING, jobB.getJob().getStatus());
+        // B should be SKIPPED (as workflow is now terminal)
+        assertEquals(JobStatus.SKIPPED, jobB.getJob().getStatus());
         // Workflow should fail because A cancelled and B is blocked
         assertEquals(WorkflowStatus.FAILED, workflowManager.getWorkflow(workflow.getId()).getStatus());
     }
@@ -397,12 +397,12 @@ class JobResultListenerTest {
         // Complete D
         simulateJobComplete(jobQueue.dequeue(), workflow.getId());
 
-        // Now A is FAILED, B is PENDING (blocked), C is PENDING (blocked), D is COMPLETED.
+        // Now A is FAILED, B is SKIPPED (blocked), C is SKIPPED (blocked), D is COMPLETED.
         // The workflow should transition to FAILED.
         assertEquals(WorkflowStatus.FAILED, workflowManager.getWorkflow(workflow.getId()).getStatus());
         assertEquals(JobStatus.FAILED, jobA.getJob().getStatus());
-        assertEquals(JobStatus.PENDING, jobB.getJob().getStatus());
-        assertEquals(JobStatus.PENDING, jobC.getJob().getStatus());
+        assertEquals(JobStatus.SKIPPED, jobB.getJob().getStatus());
+        assertEquals(JobStatus.SKIPPED, jobC.getJob().getStatus());
         assertEquals(JobStatus.COMPLETED, jobD.getJob().getStatus());
     }
     /** Returns a no-op EngineEventListener suitable for unit tests that don't need persistence. */
@@ -417,6 +417,7 @@ class JobResultListenerTest {
             public void onJobFailed(java.util.UUID j, java.util.UUID w, String s, java.time.Instant t) {}
             public void onJobCancelled(java.util.UUID j, java.util.UUID w, String s, java.time.Instant t) {}
             public void onJobRequeued(java.util.UUID j, int rc, java.time.Instant t) {}
+            public void onJobSkipped(java.util.UUID j, java.time.Instant t) {}
         };
     }
 }

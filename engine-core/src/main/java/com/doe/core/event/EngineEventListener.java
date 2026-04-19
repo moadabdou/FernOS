@@ -106,4 +106,12 @@ public interface EngineEventListener {
      * @param updatedAt  the timestamp recorded in the domain object
      */
     void onJobRequeued(UUID jobId, int retryCount, Instant updatedAt);
+
+    /**
+     * Fired when a job is marked as SKIPPED because it was PENDING when the workflow terminated.
+     *
+     * @param jobId     the skipped job
+     * @param updatedAt the timestamp recorded in the domain object
+     */
+    void onJobSkipped(UUID jobId, Instant updatedAt);
 }
