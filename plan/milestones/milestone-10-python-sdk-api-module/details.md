@@ -15,7 +15,8 @@ Stabilize and enhance the Python developer experience by providing a high-level 
 ## Architecture Decisions
 
 | Decision | Choice | Rationale |
-| Python API Style | Decorator-based (`@task`, `@workflow`) | Airflow/Prefect inspiration for familiar DX |
+| :--- | :--- | :--- |
+| Python API Style | Context Manager & Builder-based | Airflow/Prefect inspiration for familiar DX and clear dependency management |
 | Log Format | `text/plain` | Simplifies CLI and programmatic consumption |
 | MinIO Client | Boto3 / Minio-py wrapper | Standard Python client with simplified Fern-OS configuration |
 | XCom Interface | `from fernos.worker import xcom` | Direct push/pull from within job scripts |
@@ -72,7 +73,7 @@ xcom.push({
 ```python
 from fernos import DAG, Job
 
-with DAG(workflow_id="frieren_data_pipeline") as dag:
+with DAG(name="frieren_data_pipeline") as dag:
     task1 = Job(label="download_frieren_lore", path="jobs/download_data.py")
     task2 = Job(label="clean_and_process", path="jobs/process_data.py")
     

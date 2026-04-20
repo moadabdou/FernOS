@@ -14,7 +14,7 @@ Provide a high-level Python API to define workflows (DAGs) without manually edit
 
 ## Technical Details
 
-- Location: `python-sdk/fernos_sdk/core.py`.
+- Location: `python-sdk/src/core.py`.
 - The `path` argument should be relative to the DAG definition file.
 - `Job` instantiation should register the job into the current `DAG` context.
 
