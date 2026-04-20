@@ -310,6 +310,7 @@ class WorkerClientIntegrationTest {
                     // Send an ASSIGN_JOB
                     JsonObject job = new JsonObject();
                     job.addProperty("jobId", UUID.randomUUID().toString());
+                    job.addProperty("timeoutMs", 5000); // Added
                     JsonObject payload = new JsonObject();
                     payload.addProperty("type", "echo");
                     payload.addProperty("data", "hello");
@@ -497,8 +498,17 @@ class WorkerClientIntegrationTest {
             assertNotNull(result, "JOB_RESULT payload must not be null");
             assertEquals("COMPLETED", result.get("status").getAsString(),
                     "Job status should be COMPLETED");
-            assertTrue(result.get("output").getAsString().contains("integration-ok"),
-                    "Output should contain 'integration-ok', got: " + result.get("output"));
+            // The result message is a summary now, so we check the logs for the actual output
+            boolean foundOutput = false;
+            if (result.has("logs")) {
+                for (var log : result.getAsJsonArray("logs")) {
+                    if (log.getAsString().contains("integration-ok")) {
+                        foundOutput = true;
+                        break;
+                    }
+                }
+            }
+            assertTrue(foundOutput, "Logs should contain 'integration-ok'");
         }
     }
 
@@ -614,6 +624,7 @@ class WorkerClientIntegrationTest {
                     // 1. Assign Job
                     JsonObject job = new JsonObject();
                     job.addProperty("jobId", jobId.toString());
+                    job.addProperty("timeoutMs", 15000);
                     JsonObject p = new JsonObject();
                     p.addProperty("type", "mock-cancel");
                     job.add("payload", p);
@@ -775,6 +786,7 @@ class WorkerClientIntegrationTest {
                     // 1. Assign Job 1
                     JsonObject job1 = new JsonObject();
                     job1.addProperty("jobId", jobId1.toString());
+                    job1.addProperty("timeoutMs", 15000);
                     job1.add("payload", GSON.fromJson("{\"type\":\"isolated\"}", JsonObject.class));
                     out.write(ProtocolEncoder.encode(MessageType.ASSIGN_JOB, GSON.toJson(job1)));
                     out.flush();
@@ -782,6 +794,7 @@ class WorkerClientIntegrationTest {
                     // 2. Assign Job 2
                     JsonObject job2 = new JsonObject();
                     job2.addProperty("jobId", jobId2.toString());
+                    job2.addProperty("timeoutMs", 15000);
                     job2.add("payload", GSON.fromJson("{\"type\":\"isolated\"}", JsonObject.class));
                     out.write(ProtocolEncoder.encode(MessageType.ASSIGN_JOB, GSON.toJson(job2)));
                     out.flush();
@@ -807,5 +820,67 @@ class WorkerClientIntegrationTest {
             assertEquals(1, cancel2Called.getCount(), "Job 2 should NOT be cancelled");
         }
     }
+
+    @Test
+    @DisplayName("Client stays connected after consecutive timeouts if jobs are still active")
+    void mainLoop_staysConnectedOnTimeoutIfJobsActive() throws Exception {
+        CountDownLatch jobFinished = new CountDownLatch(1);
+        UUID jobId = UUID.randomUUID();
+
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            int port = serverSocket.getLocalPort();
+            
+            Thread.ofVirtual().start(() -> {
+                try {
+                    try (Socket conn = serverSocket.accept()) {
+                        conn.setSoTimeout(SERVER_TIMEOUT_MS);
+                        InputStream in = conn.getInputStream();
+                        OutputStream out = conn.getOutputStream();
+                        
+                        ProtocolDecoder.decode(in); // REGISTER_WORKER
+                        
+                        JsonObject ack = new JsonObject();
+                        ack.addProperty("workerId", UUID.randomUUID().toString());
+                        ack.addProperty("status", "registered");
+                        out.write(ProtocolEncoder.encode(MessageType.REGISTER_ACK, GSON.toJson(ack)));
+                        out.flush();
+
+                        // Assign a long-running job
+                        JsonObject job = new JsonObject();
+                        job.addProperty("jobId", jobId.toString());
+                        job.addProperty("timeoutMs", 10000);
+                        JsonObject p = new JsonObject();
+                        p.addProperty("type", "sleep");
+                        p.addProperty("ms", 2000);
+                        job.add("payload", p);
+                        out.write(ProtocolEncoder.encode(MessageType.ASSIGN_JOB, GSON.toJson(job)));
+                        out.flush();
+
+                        // Now stay silent and let the client hit timeouts.
+                        // With readTimeoutMs=200ms and MAX_TIMEOUTS=3, it should log a warning but stay connected.
+                        // We wait longer than 200ms * 3 = 600ms.
+                        Thread.sleep(1500); 
+
+                        // Verify it's still there by reading the JOB_RESULT
+                        while (true) {
+                            var msg = ProtocolDecoder.decode(in);
+                            if (msg.type() == MessageType.JOB_RESULT) {
+                                jobFinished.countDown();
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+
+            // Set short readTimeoutMs (200ms) so we hit 3 timeouts in < 1s
+            client = new WorkerClient("localhost", port, 5000, 200, "test-token");
+            clientThread = Thread.ofVirtual().start(client::start);
+
+            assertTrue(jobFinished.await(10, TimeUnit.SECONDS),
+                    "Client should stay connected and finish the job despite consecutive read timeouts");
+        }
+    }
 }
+
 

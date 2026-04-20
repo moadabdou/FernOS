@@ -6,3 +6,6 @@ doe:
       access-key: ${MINIO_ACCESS_KEY:admin}
       secret-key: ${MINIO_SECRET_KEY:password123}
       bucket: ${MINIO_BUCKET:fernos-storage}
+  worker:
+    read-timeout-ms: ${WORKER_READ_TIMEOUT_MS:1200000}
+

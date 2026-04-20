@@ -62,7 +62,9 @@ public class Main {
             }
         }
 
-        WorkerClient client = new WorkerClient(host, port, 5000, 10000, authToken);
+        int readTimeoutMs = parseTimeout(args, System.getenv("WORKER_READ_TIMEOUT_MS"));
+
+        WorkerClient client = new WorkerClient(host, port, 5000, readTimeoutMs, authToken);
 
         // Graceful shutdown on SIGINT / SIGTERM
         Runtime.getRuntime().addShutdownHook(Thread.ofVirtual()
@@ -136,10 +138,41 @@ public class Main {
             try {
                 return Integer.parseInt(envFallback);
             } catch (NumberFormatException e) {
-                LOG.error("Invalid MANAGER_PORT env value: {}", envFallback);
-                // fall through to default
             }
         }
         return DEFAULT_PORT;
     }
+
+
+    /**
+
+
+     * Parses the {@code --read-timeout <N>} argument from CLI args.
+     * Falls back to environment variable, then to 20 minutes.
+     *
+     * @param args        CLI argument array
+     * @param envFallback environment variable value to try if flag is absent (may be null)
+     * @return the timeout in milliseconds
+     */
+    static int parseTimeout(String[] args, String envFallback) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("--read-timeout".equals(args[i])) {
+                try {
+                    return Integer.parseInt(args[i + 1]);
+                } catch (NumberFormatException e) {
+                    LOG.error("Invalid timeout value: {}", args[i + 1]);
+                    System.exit(1);
+                }
+            }
+        }
+        if (envFallback != null && !envFallback.isBlank()) {
+            try {
+                return Integer.parseInt(envFallback);
+            } catch (NumberFormatException e) {
+                LOG.error("Invalid WORKER_READ_TIMEOUT_MS env value: {}", envFallback);
+            }
+        }
+        return 1_200_000; // 20 minutes default
+    }
 }
+

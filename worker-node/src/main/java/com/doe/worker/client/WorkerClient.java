@@ -270,6 +270,12 @@ public class WorkerClient {
                 if (!running) break;
                 consecutiveTimeouts++;
                 if (consecutiveTimeouts >= MAX_TIMEOUTS) {
+                    if (!activeJobs.isEmpty()) {
+                        LOG.warn("Worker {}: reached max consecutive timeouts ({}), but staying connected because {} jobs are still active.",
+                                workerId, MAX_TIMEOUTS, activeJobs.size());
+                        consecutiveTimeouts = 0; // Reset to allow more waiting
+                        continue;
+                    }
                     LOG.error("Worker {}: reached max consecutive timeouts ({}), disconnecting...", workerId, MAX_TIMEOUTS);
                     throw new IOException("Too many consecutive read timeouts");
                 }
