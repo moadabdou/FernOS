@@ -14,6 +14,7 @@ import com.doe.core.registry.WorkerDeathListener;
 import com.doe.manager.scheduler.DagScheduler;
 import com.doe.manager.scheduler.JobScheduler;
 import com.doe.manager.scheduler.JobTimeoutMonitor;
+import com.doe.manager.workflow.XComService;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
@@ -72,6 +73,7 @@ public class ManagerServer implements SmartLifecycle {
     private final JobScheduler jobScheduler;
     private final JobTimeoutMonitor jobTimeoutMonitor;
     private final EngineEventListener eventListener;
+    private final XComService xComService;
     private final List<WorkerDeathListener> workerDeathListeners = new CopyOnWriteArrayList<>();
     private final int defaultWorkerMaxCapacity;
 
@@ -95,6 +97,7 @@ public class ManagerServer implements SmartLifecycle {
             JobScheduler jobScheduler,
             JobTimeoutMonitor jobTimeoutMonitor,
             EngineEventListener eventListener,
+            XComService xComService,
             List<WorkerDeathListener> workerDeathListeners) {
             
         if (port < 0 || port > 65535) {
@@ -113,6 +116,7 @@ public class ManagerServer implements SmartLifecycle {
         this.jobScheduler = jobScheduler;
         this.jobTimeoutMonitor = jobTimeoutMonitor;
         this.eventListener = eventListener;
+        this.xComService = xComService;
         this.jwtSecretKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
         this.defaultWorkerMaxCapacity = defaultWorkerMaxCapacity;
         
@@ -208,6 +212,14 @@ public class ManagerServer implements SmartLifecycle {
                             handleJobResult(workerId, localConnection, message);
                         } else {
                             LOG.warn("Received JOB_RESULT from unregistered connection {}",
+                                    socket.getRemoteSocketAddress());
+                        }
+                    }
+                    case XCOM_REQUEST -> {
+                        if (localConnection != null) {
+                            handleXComRequest(workerId, localConnection, message);
+                        } else {
+                            LOG.warn("Received XCOM_REQUEST from unregistered connection {}",
                                     socket.getRemoteSocketAddress());
                         }
                     }
@@ -431,6 +443,68 @@ public class ManagerServer implements SmartLifecycle {
         } catch (IllegalStateException e) {
             LOG.warn("Worker {}: could not transition job {} to terminal state: {}", workerId, job.getId(), e.getMessage());
             registry.releaseCapacity(workerId, job.getId());
+        }
+    }
+
+    void handleXComRequest(UUID workerId, WorkerConnection localConnection, Message message) {
+        try {
+            JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
+            String correlationId = json.get("correlationId").getAsString();
+            UUID jobId = UUID.fromString(json.get("jobId").getAsString());
+            String command = json.get("command").getAsString();
+            String key = json.get("key").getAsString();
+
+            // Find job to get workflowId
+            Job job = jobRegistry.get(jobId).orElse(null);
+            if (job == null) {
+                sendXComResponse(localConnection, correlationId, "ERROR", "Job not found: " + jobId);
+                return;
+            }
+            
+            UUID workflowId = null; 
+            if (json.has("workflowId")) {
+                workflowId = UUID.fromString(json.get("workflowId").getAsString());
+            }
+
+            if (workflowId == null) {
+                sendXComResponse(localConnection, correlationId, "ERROR", "workflowId missing in request");
+                return;
+            }
+
+            if ("push".equalsIgnoreCase(command)) {
+                String value = json.get("value").getAsString();
+                String type = json.has("type") ? json.get("type").getAsString() : "message";
+                xComService.push(workflowId, jobId, key, value, type);
+                sendXComResponse(localConnection, correlationId, "SUCCESS", "Pushed");
+            } else if ("pull".equalsIgnoreCase(command)) {
+                Optional<String> val = xComService.pull(workflowId, key);
+                if (val.isPresent()) {
+                    sendXComResponse(localConnection, correlationId, "SUCCESS", val.get());
+                } else {
+                    sendXComResponse(localConnection, correlationId, "NOT_FOUND", null);
+                }
+            } else {
+                sendXComResponse(localConnection, correlationId, "ERROR", "Unknown command: " + command);
+            }
+
+        } catch (Exception e) {
+            LOG.error("Error handling XCom request from worker {}", workerId, e);
+        }
+    }
+
+    void sendXComResponse(WorkerConnection connection, String correlationId, String status, String value) {
+        try {
+            JsonObject response = new JsonObject();
+            response.addProperty("correlationId", correlationId);
+            response.addProperty("status", status);
+            if (value != null) {
+                response.addProperty("value", value);
+            }
+            byte[] wire = ProtocolEncoder.encode(MessageType.XCOM_RESPONSE, GSON.toJson(response));
+            connection.getSocket().getOutputStream().write(wire);
+            connection.getSocket().getOutputStream().flush();
+        } catch (IOException e) {
+            LOG.error("Failed to send XCOM_RESPONSE back to worker", e);
         }
     }
 

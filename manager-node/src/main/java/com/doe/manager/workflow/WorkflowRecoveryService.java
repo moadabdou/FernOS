@@ -102,8 +102,9 @@ public class WorkflowRecoveryService {
 
             Job job = Job.newJob(je.getPayload())
                          .id(je.getId())
+                         .workflowId(we.getId())
                          .status(je.getStatus())
-                         .timeoutMs(60000) // Defaulting to 0 since timeoutMs is not physically stored in jobEntity right now
+                         .timeoutMs(60000)
                          .createdAt(je.getCreatedAt())
                          .updatedAt(je.getUpdatedAt())
                          .build();

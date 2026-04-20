@@ -7,15 +7,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +20,6 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class PythonTaskExecutor implements TaskExecutor {
 
-    private static final Logger LOG = LoggerFactory.getLogger(PythonTaskExecutor.class);
     private static final Gson GSON = new Gson();
     private static final long DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -69,16 +60,10 @@ public class PythonTaskExecutor implements TaskExecutor {
         Process process = pb.start();
         activeProcess.set(process);
 
-        StringBuilder resultBuilder = new StringBuilder();
-        try (InputStream is = process.getInputStream();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-            
-            String line;
-            while ((line = reader.readLine()) != null) {
-                context.log(line);
-                resultBuilder.append(line).append("\n");
-            }
+        SubprocessBridge bridge = new SubprocessBridge(process, context, context.getXComClient(), definition.jobId());
+        bridge.start();
 
+        try {
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!finished) {
                 process.destroyForcibly();

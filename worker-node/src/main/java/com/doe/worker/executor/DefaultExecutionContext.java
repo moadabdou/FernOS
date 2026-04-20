@@ -2,6 +2,7 @@ package com.doe.worker.executor;
 
 import com.doe.core.executor.ExecutionContext;
 import com.doe.core.executor.XComClient;
+import com.doe.core.executor.NoOpXComClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,6 +10,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -23,6 +25,8 @@ public class DefaultExecutionContext implements ExecutionContext {
     private final Map<String, String> envVars;
     private final Map<String, String> secrets;
     private final XComClient xComClient;
+    private final UUID workflowId;
+    private final UUID jobId;
     
     private final List<String> logBuffer = new CopyOnWriteArrayList<>();
     private final AtomicLong currentLogSize = new AtomicLong(0);
@@ -45,15 +49,29 @@ public class DefaultExecutionContext implements ExecutionContext {
         return Collections.unmodifiableMap(vars);
     }
 
+
     public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient) {
         this(envVars, secrets, xComClient, DEFAULT_MAX_LOG_SIZE);
     }
 
     public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient, long maxLogSize) {
-        this.envVars = envVars;
+        this(envVars, secrets, xComClient, maxLogSize, null, null);
+    }
+
+    public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient, 
+                                 long maxLogSize, UUID workflowId, UUID jobId) {
+        this.envVars = merge(loadMinioEnvVars(), envVars);
         this.secrets = secrets;
         this.xComClient = xComClient;
         this.maxLogSize = maxLogSize;
+        this.workflowId = workflowId;
+        this.jobId = jobId;
+    }
+
+    private Map<String, String> merge(Map<String, String> base, Map<String, String> overrides) {
+        Map<String, String> merged = new HashMap<>(base);
+        merged.putAll(overrides);
+        return Collections.unmodifiableMap(merged);
     }
 
     @Override
@@ -104,19 +122,11 @@ public class DefaultExecutionContext implements ExecutionContext {
         return currentLogSize.get();
     }
 
-    /**
-     * Minimal XCom client that currently does nothing (placeholder for Issue 048).
-     */
-    private static class NoOpXComClient implements XComClient {
-        @Override
-        public void push(String key, String value) {
-            LOG.debug("XCom push (no-op): {} = {}", key, value);
-        }
+    public UUID getWorkflowId() {
+        return workflowId;
+    }
 
-        @Override
-        public String pull(String key) {
-            LOG.debug("XCom pull (no-op): {}", key);
-            return null;
-        }
+    public UUID getJobId() {
+        return jobId;
     }
 }

@@ -6,8 +6,6 @@ import com.doe.core.executor.TaskExecutor;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
-import java.util.UUID;
-
 /**
  * Plugin for {@code "type": "sleep"} jobs.
  *

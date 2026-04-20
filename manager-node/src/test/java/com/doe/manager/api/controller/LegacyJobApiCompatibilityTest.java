@@ -61,7 +61,6 @@ class LegacyJobApiCompatibilityTest {
     void submitJob_Returns201WithPendingStatus() {
         String body = "{\"payload\": \"{\\\"cmd\\\":\\\"echo hello\\\"}\"}";
 
-        @SuppressWarnings("rawtypes")
         ResponseEntity<Map> resp = rest.exchange(
                 JOBS_BASE, HttpMethod.POST,
                 new HttpEntity<>(body, jsonHeaders()),

@@ -216,6 +216,7 @@ public class JobService {
             // Standalone job retry
             Job job = Job.newJob(entity.getPayload())
                     .id(entity.getId())
+                    .workflowId(entity.getWorkflow() != null ? entity.getWorkflow().getId() : null)
                     .status(JobStatus.PENDING)
                     .build();
             jobQueue.enqueue(job);

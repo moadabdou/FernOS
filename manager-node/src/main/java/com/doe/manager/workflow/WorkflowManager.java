@@ -608,6 +608,7 @@ public class WorkflowManager {
                     LOG.info(String.format("resetJobStatuses: Resetting job %s (current status=%s) to PENDING", job.getId(), job.getStatus()));
                     Job resetJob = Job.newJob(job.getPayload())
                             .id(job.getId())
+                            .workflowId(job.getWorkflowId())
                             .status(JobStatus.PENDING)
                             .timeoutMs(job.getTimeoutMs())
                             .createdAt(job.getCreatedAt())

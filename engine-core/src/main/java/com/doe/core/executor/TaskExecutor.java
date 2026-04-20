@@ -1,7 +1,5 @@
 package com.doe.core.executor;
 
-import java.util.UUID;
-
 /**
  * SPI interface for task executors.
  * 

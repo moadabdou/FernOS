@@ -30,8 +30,8 @@ public class Main {
         
         // MinIO Storage Config
         String minioEndpoint = parseArg(args, "--minio-endpoint", System.getenv("MINIO_ENDPOINT"), "http://localhost:9000");
-        String minioAccessKey = parseArg(args, "--minio-access-key", System.getenv("MINIO_ACCESS_KEY"), "admin");
-        String minioSecretKey = parseArg(args, "--minio-secret-key", System.getenv("MINIO_SECRET_KEY"), "password123");
+        parseArg(args, "--minio-access-key", System.getenv("MINIO_ACCESS_KEY"), "admin");
+        parseArg(args, "--minio-secret-key", System.getenv("MINIO_SECRET_KEY"), "password123");
         String minioBucket = parseArg(args, "--minio-bucket", System.getenv("MINIO_BUCKET"), "fernos-storage");
 
         if (authToken == null || authToken.isBlank()) {

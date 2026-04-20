@@ -7,12 +7,18 @@ import com.doe.core.protocol.ProtocolEncoder;
 import com.doe.core.util.RetryPolicy;
 import com.doe.core.executor.ExecutionContext;
 import com.doe.core.executor.JobDefinition;
+import com.doe.core.executor.NoOpXComClient;
 import com.doe.core.executor.TaskExecutor;
+import com.doe.core.executor.XComClient;
 import com.doe.worker.executor.DefaultExecutionContext;
 import com.doe.worker.executor.TaskPluginRegistry;
+import com.doe.worker.executor.TcpXComClient;
 import com.doe.worker.executor.UnknownTaskTypeException;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+
+import io.jsonwebtoken.lang.Collections;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -282,6 +288,7 @@ public class WorkerClient {
             switch (message.type()) {
                 case ASSIGN_JOB -> handleAssignJob(message, egressQueue, workerId);
                 case CANCEL_JOB -> handleCancelJob(message, workerId);
+                case XCOM_RESPONSE -> handleXComResponse(message, workerId);
                 default -> LOG.warn("Worker {}: unexpected message type: {}",
                         workerId, message.type());
             }
@@ -302,6 +309,8 @@ public class WorkerClient {
         String jobIdStr = envelope.has("jobId") ? envelope.get("jobId").getAsString() : "unknown";
         UUID uuid = "unknown".equals(jobIdStr) ? UUID.randomUUID() : UUID.fromString(jobIdStr);
         
+        UUID workflowId = envelope.has("workflowId") ? UUID.fromString(envelope.get("workflowId").getAsString()) : null;
+
         // Extract payload and remove "type" field
         JsonObject payloadObj = envelope.has("payload") ? envelope.get("payload").getAsJsonObject() : new JsonObject();
         String type = payloadObj.has("type") ? payloadObj.get("type").getAsString() : "unknown";
@@ -329,7 +338,19 @@ public class WorkerClient {
 
         // ── 2. Execute the task asynchronously ──────────────────────────────────
         JobDefinition definition = new JobDefinition(uuid, type, cleanedPayload);
-        ExecutionContext context = new DefaultExecutionContext();
+        
+        XComClient xComClient = workflowId != null 
+                ? new TcpXComClient(this, workflowId, uuid, 30000) // 30s timeout
+                : new NoOpXComClient();
+
+        ExecutionContext context = new DefaultExecutionContext(
+                Collections.emptyMap(), 
+                Collections.emptyMap(), 
+                xComClient, 
+                1000000, 
+                workflowId, 
+                uuid
+        );
         
         TaskExecutor executor;
         try {
@@ -413,6 +434,43 @@ public class WorkerClient {
             }
             boolean cancelled = state.future().cancel(true);
             LOG.info("Worker {}: attempting to cancel job {} — successful: {}", workerId, jobId, cancelled);
+        }
+    }
+
+    private void handleXComResponse(Message message, UUID workerId) {
+        try {
+            JsonObject json = GSON.fromJson(message.payloadAsString(), JsonObject.class);
+            String correlationId = json.get("correlationId").getAsString();
+            String status = json.get("status").getAsString();
+            String value = json.has("value") ? json.get("value").getAsString() : null;
+
+            LOG.debug("Worker {}: received XCOM_RESPONSE for correlationId: {}, status: {}", workerId, correlationId, status);
+
+            if ("SUCCESS".equals(status)) {
+                XComCorrelationRegistry.getInstance().complete(correlationId, value);
+            } else {
+                XComCorrelationRegistry.getInstance().fail(correlationId, new RuntimeException("XCom error: " + status + (value != null ? " - " + value : "")));
+            }
+        } catch (Exception e) {
+            LOG.error("Worker {}: failed to parse XCOM_RESPONSE", workerId, e);
+        }
+    }
+
+    /**
+     * Sends an XCom request to the manager.
+     */
+    public void sendXComRequest(JsonObject payload) {
+        BlockingQueue<OutboundMessage> queue = currentEgressQueue;
+        if (queue == null) {
+            LOG.warn("Cannot send XCom request: connection lost");
+            return;
+        }
+        try {
+            byte[] bytes = ProtocolEncoder.encode(MessageType.XCOM_REQUEST, GSON.toJson(payload));
+            queue.put(new OutboundMessage(bytes, e -> LOG.error("Failed to send XCOM_REQUEST", e)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Interrupted while sending XCOM_REQUEST");
         }
     }
 

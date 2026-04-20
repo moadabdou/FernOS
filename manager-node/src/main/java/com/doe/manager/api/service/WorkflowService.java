@@ -52,11 +52,15 @@ public class WorkflowService {
     public WorkflowResponse createWorkflow(CreateWorkflowRequest req) {
         validateCreateRequest(req);
 
+        // Generate workflow ID upfront so we can link jobs to it
+        UUID workflowId = UUID.randomUUID();
+
         // Build a label → Job map (preserving insertion order for dagIndex)
         Map<String, Job> labelToJob = new LinkedHashMap<>();
         List<CreateWorkflowRequest.JobDefinition> jobDefs = req.jobs();
         for (CreateWorkflowRequest.JobDefinition def : jobDefs) {
             Job job = Job.newJob(def.payload())
+                    .workflowId(workflowId)
                     .timeoutMs(def.timeoutMs() != null ? def.timeoutMs() : 60000L)
                     .retryCount(def.retryCount() != null ? def.retryCount() : 0)
                     .build();
@@ -85,7 +89,7 @@ public class WorkflowService {
         }
 
         // Build WorkflowJobs
-        Workflow.Builder builder = Workflow.newWorkflow(req.name());
+        Workflow.Builder builder = Workflow.newWorkflow(req.name()).id(workflowId);
         int idx = 0;
         for (Map.Entry<String, Job> entry : labelToJob.entrySet()) {
             String label = entry.getKey();
@@ -251,6 +255,7 @@ public class WorkflowService {
         Map<String, Job> labelToJob = new LinkedHashMap<>();
         for (CreateWorkflowRequest.JobDefinition def : req.jobs()) {
             Job job = Job.newJob(def.payload())
+                    .workflowId(workflowId)
                     .timeoutMs(def.timeoutMs() != null ? def.timeoutMs() : 60000L)
                     .retryCount(def.retryCount() != null ? def.retryCount() : 0)
                     .build();

@@ -15,6 +15,7 @@ public final class Job {
     // ──── Fields ────────────────────────────────────────────────────────────
 
     private final UUID id;
+    private final UUID workflowId; // nullable for legacy/standalone jobs
     private volatile JobStatus status;
     private final String payload;        // JSON command / data
     private volatile String result;      // output from worker (nullable)
@@ -28,6 +29,7 @@ public final class Job {
 
     private Job(Builder builder) {
         this.id               = Objects.requireNonNull(builder.id,        "id");
+        this.workflowId       = builder.workflowId;
         this.status           = Objects.requireNonNull(builder.status,    "status");
         this.payload          = Objects.requireNonNull(builder.payload,   "payload");
         this.result           = builder.result;
@@ -80,6 +82,7 @@ public final class Job {
     // ──── Accessors ──────────────────────────────────────────────────────────
 
     public UUID getId()              { return id; }
+    public UUID getWorkflowId()      { return workflowId; }
     public JobStatus getStatus()     { return status; }
     public String getPayload()       { return payload; }
     public String getResult()        { return result; }
@@ -105,6 +108,7 @@ public final class Job {
 
     public static final class Builder {
         private UUID id;
+        private UUID workflowId;
         private JobStatus status;
         private String payload;
         private String result;
@@ -117,6 +121,7 @@ public final class Job {
         private Builder() {}
 
         public Builder id(UUID id)                            { this.id = id;                         return this; }
+        public Builder workflowId(UUID workflowId)            { this.workflowId = workflowId;         return this; }
         public Builder status(JobStatus status)               { this.status = status;                 return this; }
         public Builder payload(String payload)                { this.payload = payload;               return this; }
         public Builder result(String result)                  { this.result = result;                 return this; }

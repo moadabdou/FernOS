@@ -259,38 +259,6 @@ public class DagScheduler implements WorkflowEventListener {
     }
 
     /**
-     * Returns true if any dependency of the given workflow job has FAILED or CANCELLED.
-     */
-    private boolean hasFailedDependency(WorkflowJob wj, Workflow workflow) {
-        for (UUID depId : wj.getDependencies()) {
-            WorkflowJob depWj = workflow.getJob(depId);
-            if (depWj != null && (depWj.getJob().getStatus() == JobStatus.FAILED
-                    || depWj.getJob().getStatus() == JobStatus.CANCELLED)) {
-                return true;
-            }
-            // Recursively check transitive dependencies
-            if (depWj != null && hasFailedDependency(depWj, workflow)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Marks a job as CANCELLED because its dependencies could not be met (fail-fast mode).
-     * PENDING → CANCELLED is a valid transition; the job was never dispatched.
-     * Fires {@code onJobCancelled} so persistence listeners update the DB record.
-     */
-    private void failJobWithUnmetDependencies(UUID workflowId, Job job) {
-        job.transition(JobStatus.CANCELLED);
-        job.setResult("Skipped: dependency failed (fail-fast mode)");
-        LOG.info("DagScheduler: cancelled job {} in workflow {} due to unmet dependencies",
-                job.getId(), workflowId);
-        // Notify all EngineEventListeners (incl. DatabaseEventListener) so the DB is updated.
-        eventListener.onJobCancelled(job.getId(), null, job.getResult(), job.getUpdatedAt());
-    }
-
-    /**
      * Counts how many jobs in this workflow are currently "in flight" — meaning
      * they are already in the queue or actively being processed by workers.
      * Used to enforce the max-concurrent-jobs-per-workflow limit.
