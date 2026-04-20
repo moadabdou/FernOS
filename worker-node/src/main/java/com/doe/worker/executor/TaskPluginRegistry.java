@@ -61,11 +61,12 @@ public class TaskPluginRegistry {
      * @throws UnknownTaskTypeException  if no plugin is registered for the type
      * @throws Exception                 if the plugin itself throws
      */
-    public String execute(JobDefinition definition, ExecutionContext context) throws Exception {
+    public String execute(ExecutionContext context) throws Exception {
+        JobDefinition definition = context.getDefinition();
         TaskExecutor plugin = getExecutor(definition.type())
                 .orElseThrow(() -> new UnknownTaskTypeException(definition.type()));
 
-        return plugin.execute(definition, context);
+        return plugin.execute(context);
     }
 
     /**

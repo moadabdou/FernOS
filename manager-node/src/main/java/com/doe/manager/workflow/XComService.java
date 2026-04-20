@@ -61,20 +61,25 @@ public class XComService {
         for (XComEntity entity : entities) {
             String type = entity.getType();
             String value = entity.getValue();
+            String key = entity.getKey();
 
             // Check if it's a MinIO reference
-            // Heuristic: type is "minio" or value starts with "minio://" or key ends with "_path"/"_data"
-            // For now, let's be safe and check type="minio" or value starts with "minio://"
-            // Given the user request, we should be proactive.
-            if ("minio".equalsIgnoreCase(type) || (value != null && value.startsWith("minio://"))) {
+            // Heuristic: type is "minio" OR value starts with "minio://" OR key ends with "_path"/"_data"
+            boolean isMinio = "minio".equalsIgnoreCase(type) || 
+                             (value != null && value.startsWith("minio://")) ||
+                             (key != null && (key.endsWith("_path") || key.endsWith("_data")));
+
+            if (isMinio) {
                 String path = value;
-                if (value.startsWith("minio://")) {
+                if (value != null && value.startsWith("minio://")) {
                     path = value.substring(8); // strip minio://
                     if (path.contains("/")) {
                         path = path.substring(path.indexOf("/") + 1); // strip bucket name
                     }
                 }
-                minioService.deleteObject(path);
+                if (path != null) {
+                    minioService.deleteObject(path);
+                }
             }
         }
 

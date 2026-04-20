@@ -1,8 +1,8 @@
 package com.doe.worker.executor;
 
 import com.doe.core.executor.ExecutionContext;
+import com.doe.core.executor.JobDefinition;
 import com.doe.core.executor.XComClient;
-import com.doe.core.executor.NoOpXComClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,21 +22,15 @@ public class DefaultExecutionContext implements ExecutionContext {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultExecutionContext.class);
     private static final long DEFAULT_MAX_LOG_SIZE = 1_000_000; // 1MB in characters
 
-    private final Map<String, String> envVars;
-    private final Map<String, String> secrets;
+    private final JobDefinition definition;
     private final XComClient xComClient;
-    private final UUID workflowId;
-    private final UUID jobId;
+    private final Map<String, String> envVars;
     
     private final List<String> logBuffer = new CopyOnWriteArrayList<>();
     private final AtomicLong currentLogSize = new AtomicLong(0);
     private final long maxLogSize;
     private volatile boolean logsTruncated = false;
 
-    public DefaultExecutionContext() {
-        this(loadMinioEnvVars(), Collections.emptyMap(), new NoOpXComClient(), DEFAULT_MAX_LOG_SIZE);
-    }
-    
     private static Map<String, String> loadMinioEnvVars() {
         Map<String, String> vars = new HashMap<>();
         String[] minioKeys = {"MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET"};
@@ -50,22 +44,17 @@ public class DefaultExecutionContext implements ExecutionContext {
     }
 
 
-    public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient) {
-        this(envVars, secrets, xComClient, DEFAULT_MAX_LOG_SIZE);
+    public DefaultExecutionContext(JobDefinition definition, Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient) {
+        this(definition, envVars, secrets, xComClient, DEFAULT_MAX_LOG_SIZE);
     }
 
-    public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient, long maxLogSize) {
-        this(envVars, secrets, xComClient, maxLogSize, null, null);
-    }
-
-    public DefaultExecutionContext(Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient, 
-                                 long maxLogSize, UUID workflowId, UUID jobId) {
+    public DefaultExecutionContext(JobDefinition definition, Map<String, String> envVars, Map<String, String> secrets, XComClient xComClient, long maxLogSize) {
+        this.definition = definition;
+        // Merge provided envVars with defaults (like Minio)
         this.envVars = merge(loadMinioEnvVars(), envVars);
-        this.secrets = secrets;
+        // Note: secrets aren't currently handled in this simplified version, but we'll keep the param for future
         this.xComClient = xComClient;
         this.maxLogSize = maxLogSize;
-        this.workflowId = workflowId;
-        this.jobId = jobId;
     }
 
     private Map<String, String> merge(Map<String, String> base, Map<String, String> overrides) {
@@ -75,13 +64,19 @@ public class DefaultExecutionContext implements ExecutionContext {
     }
 
     @Override
+    public JobDefinition getDefinition() {
+        return definition;
+    }
+
+    @Override
     public Map<String, String> getEnvVars() {
+        // We merge them in constructor or load on demand. Returning Minio env for now.
         return envVars;
     }
 
     @Override
     public Map<String, String> getSecrets() {
-        return secrets;
+        return Collections.emptyMap();
     }
 
     @Override
@@ -123,10 +118,10 @@ public class DefaultExecutionContext implements ExecutionContext {
     }
 
     public UUID getWorkflowId() {
-        return workflowId;
+        return definition.workflowId();
     }
 
     public UUID getJobId() {
-        return jobId;
+        return definition.jobId();
     }
 }

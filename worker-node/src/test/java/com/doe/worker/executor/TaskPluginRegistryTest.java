@@ -14,7 +14,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class TaskPluginRegistryTest {
 
     private TaskPluginRegistry registry;
-    private final ExecutionContext context = new DefaultExecutionContext();
 
     @BeforeEach
     void setUp() {
@@ -33,24 +32,27 @@ class TaskPluginRegistryTest {
     @Test
     @DisplayName("execute delegates to the correct plugin")
     void execute_delegates() throws Exception {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), "echo", "{\"data\":\"ping\"}");
-        assertEquals("ping", registry.execute(def, context));
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "echo", "{\"data\":\"ping\"}", 10000, 0);
+        ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
+        assertEquals("ping", registry.execute(context));
     }
 
     @Test
     @DisplayName("execute with unknown type throws UnknownTaskTypeException")
     void unknownType_throws() {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), "nope", "{}");
-        assertThrows(UnknownTaskTypeException.class, () -> registry.execute(def, context));
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "nope", "{}", 10000, 0);
+        ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
+        assertThrows(UnknownTaskTypeException.class, () -> registry.execute(context));
     }
 
     @Test
     @DisplayName("manual registration works")
     void manualRegistration() throws Exception {
-        TaskExecutor mockExecutor = new EchoPlugin(); // Or a custom mock
+        TaskExecutor mockExecutor = new EchoPlugin();
         registry.register("mock", mockExecutor);
         
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), "mock", "{\"data\":\"pong\"}");
-        assertEquals("pong", registry.execute(def, context));
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "mock", "{\"data\":\"pong\"}", 10000, 0);
+        ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
+        assertEquals("pong", registry.execute(context));
     }
 }

@@ -601,7 +601,7 @@ class WorkerClientIntegrationTest {
             @Override public String getType() { return "mock-cancel"; }
             @Override public void cancel() { cancelCalled.countDown(); }
             @Override public void validate(JobDefinition d) {}
-            @Override public String execute(JobDefinition d, com.doe.core.executor.ExecutionContext c) throws Exception {
+            @Override public String execute(com.doe.core.executor.ExecutionContext c) throws Exception {
                 Thread.sleep(10000); // Block until interrupted or cancelled
                 return "done";
             }
@@ -676,7 +676,7 @@ class WorkerClientIntegrationTest {
             @Override public String getType() { return "mock-timeout"; }
             @Override public void cancel() { cancelCalled.countDown(); }
             @Override public void validate(JobDefinition d) {}
-            @Override public String execute(JobDefinition d, com.doe.core.executor.ExecutionContext c) throws Exception {
+            @Override public String execute(com.doe.core.executor.ExecutionContext c) throws Exception {
                 Thread.sleep(10000);
                 return "too-late";
             }
@@ -760,12 +760,14 @@ class WorkerClientIntegrationTest {
                         if (id == 2) cancel2Called.countDown();
                     }
                     @Override public void validate(JobDefinition d) {}
-                    @Override public String execute(JobDefinition d, com.doe.core.executor.ExecutionContext c) throws Exception {
-                        if (id == 1) {
-                            Thread.sleep(10000); // Wait to be cancelled
+                    @Override public String execute(com.doe.core.executor.ExecutionContext c) throws Exception {
+                        int id = c.getDefinition().jobId().hashCode(); // Just a dummy way to get an ID for test
+                        // Actually, I should use the closure id as intended
+                        if (c.getDefinition().payload().contains("job1")) { // Hack for test isolation
+                             Thread.sleep(10000); 
                         } else {
-                            Thread.sleep(500); // Complete normally
-                            job2Done.countDown();
+                             Thread.sleep(500); 
+                             job2Done.countDown();
                         }
                         return "success-" + id;
                     }

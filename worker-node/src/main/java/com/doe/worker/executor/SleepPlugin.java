@@ -24,7 +24,8 @@ public class SleepPlugin implements TaskExecutor {
     }
 
     @Override
-    public String execute(JobDefinition definition, ExecutionContext context) throws InterruptedException {
+    public String execute(ExecutionContext context) throws InterruptedException {
+        JobDefinition definition = context.getDefinition();
         JsonObject json = GSON.fromJson(definition.payload(), JsonObject.class);
         if (json == null || !json.has("ms")) {
             throw new IllegalArgumentException("sleep payload requires an 'ms' field");

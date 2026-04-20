@@ -24,7 +24,8 @@ public class EchoPlugin implements TaskExecutor {
     }
 
     @Override
-    public String execute(JobDefinition definition, ExecutionContext context) {
+    public String execute(ExecutionContext context) {
+        JobDefinition definition = context.getDefinition();
         JsonObject json = GSON.fromJson(definition.payload(), JsonObject.class);
         if (json == null || !json.has("data")) {
             throw new IllegalArgumentException("echo payload requires a 'data' field");

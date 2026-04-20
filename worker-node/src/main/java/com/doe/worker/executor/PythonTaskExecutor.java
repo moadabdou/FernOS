@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public class PythonTaskExecutor implements TaskExecutor {
 
     private static final Gson GSON = new Gson();
-    private static final long DEFAULT_TIMEOUT_MS = 600_000; // 10 minutes
 
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
 
@@ -31,7 +30,8 @@ public class PythonTaskExecutor implements TaskExecutor {
     }
 
     @Override
-    public String execute(JobDefinition definition, ExecutionContext context) throws Exception {
+    public String execute(ExecutionContext context) throws Exception {
+        JobDefinition definition = context.getDefinition();
         JsonObject json = GSON.fromJson(definition.payload(), JsonObject.class);
         validatePayload(json);
 
@@ -52,7 +52,10 @@ public class PythonTaskExecutor implements TaskExecutor {
             }
         }
 
-        long timeoutMs = json.has("timeoutMs") ? json.get("timeoutMs").getAsLong() : DEFAULT_TIMEOUT_MS;
+        long timeoutMs = definition.timeoutMs();
+        if (timeoutMs <= 0) {
+            throw new IllegalArgumentException("python job must have a positive timeoutMs, got: " + timeoutMs);
+        }
 
         // Create a temporary workspace for the job
         java.nio.file.Path workspace = java.nio.file.Files.createTempDirectory("job-py-" + definition.jobId() + "-");

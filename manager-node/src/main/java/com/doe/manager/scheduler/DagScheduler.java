@@ -74,6 +74,9 @@ public class DagScheduler implements WorkflowEventListener {
     /** Tracks which jobs have already been submitted to the queue per workflow, to avoid double-submission. */
     private final Map<UUID, Set<UUID>> submittedJobs = new ConcurrentHashMap<>();
 
+    /** Locks per workflow to ensure serial evaluation even if triggered from multiple threads. */
+    private final Map<UUID, Object> workflowLocks = new ConcurrentHashMap<>();
+
     private ScheduledExecutorService schedulerExecutor;
     private volatile boolean running;
 
@@ -172,44 +175,48 @@ public class DagScheduler implements WorkflowEventListener {
      * if the workflow has reached a terminal state.
      */
     private void evaluateWorkflow(UUID workflowId) {
-        Workflow workflow = workflowManager.getWorkflow(workflowId);
-        if (workflow == null || workflow.getStatus() != WorkflowStatus.RUNNING) {
-            return;
-        }
-
-        Set<UUID> alreadySubmitted = submittedJobs.computeIfAbsent(workflowId, k ->
-                Collections.newSetFromMap(new ConcurrentHashMap<>()));
-
-        List<WorkflowJob> readyJobs = findReadyJobs(workflow, alreadySubmitted);
-
-        if (readyJobs.isEmpty()) {
-            // No ready jobs — check if workflow is done
-            checkTerminalState(workflow);
-            return;
-        }
-
-        // Enqueue ready jobs (respecting max-concurrent limit)
-        int runningJobCount = countRunningJobs(workflow, alreadySubmitted);
-        int enqueued = 0;
-        for (WorkflowJob wj : readyJobs) {
-            if (runningJobCount + enqueued >= maxConcurrentJobsPerWorkflow) {
-                LOG.debug("Workflow {} reached max concurrent jobs limit ({})", workflowId, maxConcurrentJobsPerWorkflow);
-                break;
+        synchronized (workflowLocks.computeIfAbsent(workflowId, k -> new Object())) {
+            Workflow workflow = workflowManager.getWorkflow(workflowId);
+            if (workflow == null || workflow.getStatus() != WorkflowStatus.RUNNING) {
+                return;
             }
 
-            Job job = wj.getJob();
-            // Double-check the job is still PENDING (may have changed since we read it)
-            if (job.getStatus() != JobStatus.PENDING) {
-                alreadySubmitted.add(job.getId()); 
-                continue;
+            Set<UUID> alreadySubmitted = submittedJobs.computeIfAbsent(workflowId, k ->
+                    Collections.newSetFromMap(new ConcurrentHashMap<>()));
+
+            List<WorkflowJob> readyJobs = findReadyJobs(workflow, alreadySubmitted);
+
+            if (readyJobs.isEmpty()) {
+                // No ready jobs — check if workflow is done
+                checkTerminalState(workflow);
+                return;
             }
 
-            // Atomically check if it was already submitted by another thread evaluating concurrently
-            if (alreadySubmitted.add(job.getId())) {
-                jobQueue.enqueue(job);
-                enqueued++;
-                LOG.info("DagScheduler: enqueued job {} from workflow {} (deps satisfied)",
-                        job.getId(), workflowId);
+            // Enqueue ready jobs (respecting max-concurrent limit)
+            int runningJobCount = countRunningJobs(workflow, alreadySubmitted);
+            LOG.info("DagScheduler: workflow {} has {} running/enqueued jobs. readyJobs={}, limit={}", 
+                    workflowId, runningJobCount, readyJobs.size(), maxConcurrentJobsPerWorkflow);
+            int enqueued = 0;
+            for (WorkflowJob wj : readyJobs) {
+                if (runningJobCount + enqueued >= maxConcurrentJobsPerWorkflow) {
+                    LOG.debug("Workflow {} reached max concurrent jobs limit ({})", workflowId, maxConcurrentJobsPerWorkflow);
+                    break;
+                }
+
+                Job job = wj.getJob();
+                // Double-check the job is still PENDING (may have changed since we read it)
+                if (job.getStatus() != JobStatus.PENDING) {
+                    alreadySubmitted.add(job.getId()); 
+                    continue;
+                }
+
+                // Atomically check if it was already submitted by another thread evaluating concurrently
+                if (alreadySubmitted.add(job.getId())) {
+                    jobQueue.enqueue(job);
+                    enqueued++;
+                    LOG.info("DagScheduler: enqueued job {} from workflow {} (deps satisfied)",
+                            job.getId(), workflowId);
+                }
             }
         }
     }
@@ -428,6 +435,7 @@ public class DagScheduler implements WorkflowEventListener {
      */
     public void forgetWorkflow(UUID workflowId) {
         submittedJobs.remove(workflowId);
+        workflowLocks.remove(workflowId);
     }
 
     // ──── WorkflowEventListener overrides ───────────────────────────────────

@@ -27,7 +27,8 @@ public class FibonacciPlugin implements TaskExecutor {
     }
 
     @Override
-    public String execute(JobDefinition definition, ExecutionContext context) {
+    public String execute(ExecutionContext context) {
+        JobDefinition definition = context.getDefinition();
         JsonObject json = GSON.fromJson(definition.payload(), JsonObject.class);
         if (json == null || !json.has("n")) {
             throw new IllegalArgumentException("fibonacci payload requires an 'n' field");

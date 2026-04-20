@@ -1,5 +1,7 @@
 package com.doe.manager.api.controller;
 
+import org.springframework.test.context.ActiveProfiles;
+
 import com.doe.core.model.JobStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * via {@code GET /api/v1/jobs/{id}}.
  */
 @Testcontainers
+@ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LegacyJobApiCompatibilityTest {
 

@@ -9,6 +9,11 @@ import java.util.Map;
  */
 public interface ExecutionContext {
     /**
+     * @return the full job definition being executed
+     */
+    JobDefinition getDefinition();
+
+    /**
      * @return a map of environment variables available to the task
      */
     Map<String, String> getEnvVars();

@@ -1,7 +1,10 @@
 package com.doe.worker.executor;
 
+import com.doe.core.executor.JobDefinition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.util.UUID;
 
 import java.util.Collections;
 import java.util.List;
@@ -13,7 +16,8 @@ class DefaultExecutionContextTest {
     @Test
     @DisplayName("log() buffers messages and getBufferedLogs() returns them")
     void log_buffersMessages() {
-        DefaultExecutionContext context = new DefaultExecutionContext();
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0);
+        DefaultExecutionContext context = new DefaultExecutionContext(def, Collections.emptyMap(), Collections.emptyMap(), null);
         context.log("message 1");
         context.log("message 2");
         
@@ -27,8 +31,9 @@ class DefaultExecutionContextTest {
     @DisplayName("log() caps logs based on total size")
     void log_capsBySize() {
         // Limit to 20 characters
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0);
         DefaultExecutionContext context = new DefaultExecutionContext(
-                Collections.emptyMap(), Collections.emptyMap(), null, 20);
+                def, Collections.emptyMap(), Collections.emptyMap(), null, 20);
         
         context.log("1234567890"); // 10 chars
         context.log("1234567890"); // 10 chars, total 20
@@ -49,7 +54,8 @@ class DefaultExecutionContextTest {
     @Test
     @DisplayName("getBufferedLogsSize() returns correct cumulative size")
     void getBufferedLogsSize_returnsCorrectSize() {
-        DefaultExecutionContext context = new DefaultExecutionContext();
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0);
+        DefaultExecutionContext context = new DefaultExecutionContext(def, Collections.emptyMap(), Collections.emptyMap(), null);
         context.log("abc");
         context.log("defg");
         

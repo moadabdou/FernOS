@@ -21,7 +21,7 @@ public interface TaskExecutor {
      * @return the result string to include in {@code JOB_RESULT}
      * @throws Exception if execution fails for any reason
      */
-    String execute(JobDefinition definition, ExecutionContext context) throws Exception;
+    String execute(ExecutionContext context) throws Exception;
 
     /**
      * Attempts to cancel the currently running job.

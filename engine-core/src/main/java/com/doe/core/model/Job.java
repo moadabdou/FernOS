@@ -20,7 +20,7 @@ public final class Job {
     private final String payload;        // JSON command / data
     private volatile String result;      // output from worker (nullable)
     private volatile UUID assignedWorkerId; // nullable
-    private final int retryCount;
+    private volatile int retryCount;
     private final long timeoutMs;
     private final String jobLabel; // nullable
     private final Instant createdAt;

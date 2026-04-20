@@ -64,12 +64,14 @@ public class WorkflowService {
 
         // Build a label → Job map (preserving insertion order for dagIndex)
         Map<String, Job> labelToJob = new LinkedHashMap<>();
-        List<CreateWorkflowRequest.JobDefinition> jobDefs = req.jobs();
-        for (CreateWorkflowRequest.JobDefinition def : jobDefs) {
+        List<com.doe.core.executor.JobDefinition> jobDefs = req.jobs();
+        for (com.doe.core.executor.JobDefinition def : jobDefs) {
+            // If type is not provided at top level, it might be in the payload (legacy)
+            // But we prefer it from the definition
             Job job = Job.newJob(def.payload())
                     .workflowId(workflowId)
-                    .timeoutMs(def.timeoutMs() != null ? def.timeoutMs() : defaultJobTimeoutMs)
-                    .retryCount(def.retryCount() != null ? def.retryCount() : 0)
+                    .timeoutMs(def.timeoutMs() > 0 ? def.timeoutMs() : defaultJobTimeoutMs)
+                    .retryCount(def.retryCount() > 0 ? def.retryCount() : 0)
                     .jobLabel(def.label())
                     .build();
             labelToJob.put(def.label(), job);
@@ -271,7 +273,7 @@ public class WorkflowService {
         }
         // Check all labels are unique
         Set<String> seen = new HashSet<>();
-        for (CreateWorkflowRequest.JobDefinition def : req.jobs()) {
+        for (com.doe.core.executor.JobDefinition def : req.jobs()) {
             if (def.label() == null || def.label().isBlank()) {
                 throw new IllegalArgumentException("Each job must have a non-blank label");
             }
@@ -290,11 +292,11 @@ public class WorkflowService {
      */
     private Workflow buildWorkflowDomain(UUID workflowId, CreateWorkflowRequest req) {
         Map<String, Job> labelToJob = new LinkedHashMap<>();
-        for (CreateWorkflowRequest.JobDefinition def : req.jobs()) {
+        for (com.doe.core.executor.JobDefinition def : req.jobs()) {
             Job job = Job.newJob(def.payload())
                     .workflowId(workflowId)
-                    .timeoutMs(def.timeoutMs() != null ? def.timeoutMs() : defaultJobTimeoutMs)
-                    .retryCount(def.retryCount() != null ? def.retryCount() : 0)
+                    .timeoutMs(def.timeoutMs() > 0 ? def.timeoutMs() : defaultJobTimeoutMs)
+                    .retryCount(def.retryCount() > 0 ? def.retryCount() : 0)
                     .jobLabel(def.label())
                     .build();
             labelToJob.put(def.label(), job);

@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public class ShellScriptPlugin implements TaskExecutor {
 
     private static final Gson GSON = new Gson();
-    private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
 
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
 
@@ -26,13 +25,17 @@ public class ShellScriptPlugin implements TaskExecutor {
     }
 
     @Override
-    public String execute(JobDefinition definition, ExecutionContext context) throws Exception {
+    public String execute(ExecutionContext context) throws Exception {
+        JobDefinition definition = context.getDefinition();
         JsonObject json = GSON.fromJson(definition.payload(), JsonObject.class);
+        
         if (json == null || !json.has("script")) {
             throw new IllegalArgumentException("bash payload requires a 'script' field");
         }
 
         String script = json.get("script").getAsString();
+        long timeoutMs = definition.timeoutMs();
+
         // Automatically prepend set -e and set -o pipefail to ensure script fails fast on any error
         if (!script.trim().startsWith("#!")) {
             script = "set -e\nset -o pipefail\n" + script;
@@ -44,12 +47,8 @@ public class ShellScriptPlugin implements TaskExecutor {
             }
         }
 
-        long timeoutMs = json.has("timeoutMs")
-                ? json.get("timeoutMs").getAsLong()
-                : DEFAULT_TIMEOUT_MS;
-
         if (timeoutMs <= 0) {
-            throw new IllegalArgumentException("bash 'timeoutMs' must be positive, got: " + timeoutMs);
+            throw new IllegalArgumentException("bash job must have a positive timeoutMs, got: " + timeoutMs);
         }
 
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", script);

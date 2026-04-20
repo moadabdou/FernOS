@@ -349,19 +349,26 @@ public class WorkerClient {
         }
 
         // ── 2. Execute the task asynchronously ──────────────────────────────────
-        JobDefinition definition = new JobDefinition(uuid, type, cleanedPayload);
+        JobDefinition definition = new JobDefinition(
+                uuid,
+                workflowId,
+                envelope.has("label") ? envelope.get("label").getAsString() : "job-" + jobIdStr,
+                type,
+                cleanedPayload,
+                timeoutMs,
+                envelope.has("retryCount") ? envelope.get("retryCount").getAsInt() : 0
+        );
         
         XComClient xComClient = workflowId != null 
                 ? new TcpXComClient(this, workflowId, uuid, 30000) // 30s timeout
                 : new NoOpXComClient();
 
         ExecutionContext context = new DefaultExecutionContext(
+                definition,
                 Collections.emptyMap(), 
                 Collections.emptyMap(), 
                 xComClient, 
-                1000000, 
-                workflowId, 
-                uuid
+                1000000
         );
         
         TaskExecutor executor;
@@ -375,7 +382,7 @@ public class WorkerClient {
             return;
         }
 
-        Future<String> taskFuture = jobExecutor.submit(() -> executor.execute(definition, context));
+        Future<String> taskFuture = jobExecutor.submit(() -> executor.execute(context));
         activeJobs.put(jobIdStr, new JobState(taskFuture, executor));
 
         Thread.ofVirtual().name("job-waiter-" + jobIdStr).start(() -> {
