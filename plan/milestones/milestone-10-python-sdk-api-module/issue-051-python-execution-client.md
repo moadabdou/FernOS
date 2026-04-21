@@ -18,5 +18,5 @@ Enable users to programmatically trigger and monitor Fern-OS workflows from Pyth
 
 ## Acceptance Criteria
 
-- [ ] Code snippet can submit a workflow and wait for it to finish
-- [ ] Handles network timeouts and API errors gracefully
+- [x] Code snippet can submit a workflow and wait for it to finish
+- [x] Handles network timeouts and API errors gracefully

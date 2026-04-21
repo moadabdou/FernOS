@@ -1,8 +1,26 @@
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any, TYPE_CHECKING
 import threading
 import json
 import re
 import os
+import time
+import requests
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from .core import DAG
+
+class JobGroup(list):
+    """A list-like collection of jobs that supports operator overloading for DAG definition."""
+    def __rshift__(self, other: Union['Job', List['Job'], 'JobGroup']) -> Union['Job', 'JobGroup']:
+        for job in self:
+            job >> other
+        return other
+
+    def __lshift__(self, other: Union['Job', List['Job'], 'JobGroup']) -> Union['Job', 'JobGroup']:
+        for job in self:
+            job << other
+        return other
 
 class DAGContext(threading.local):
     """Thread-local storage for the active DAG context."""
@@ -104,16 +122,18 @@ class Job:
     def __hash__(self) -> int:
         return hash(self.label)
 
-    def __rshift__(self, other: Union['Job', List['Job']]) -> Union['Job', List['Job']]:
+    def __rshift__(self, other: Union['Job', List['Job']]) -> Union['Job', 'JobGroup']:
         if isinstance(other, list):
+            other = JobGroup(other)
             for job in other:
                 job.upstream.add(self.label)
         else:
             other.upstream.add(self.label)
         return other
 
-    def __lshift__(self, other: Union['Job', List['Job']]) -> Union['Job', List['Job']]:
+    def __lshift__(self, other: Union['Job', List['Job']]) -> Union['Job', 'JobGroup']:
         if isinstance(other, list):
+            other = JobGroup(other)
             for job in other:
                 self.upstream.add(job.label)
         else:
@@ -250,3 +270,221 @@ class DAG:
             "jobs": jobs_data,
             "dependencies": dependencies
         }
+
+class RemoteJob:
+    """A wrapper for a job that exists on the Fern-OS Manager."""
+    def __init__(self, client: 'FernOSClient', workflow_id: UUID, data: Dict[str, Any]):
+        self._client = client
+        self._workflow_id = workflow_id
+        self._data = data
+
+    @property
+    def id(self) -> UUID:
+        return UUID(self._data["id"])
+
+    @property
+    def label(self) -> str:
+        return self._data["label"]
+
+    @property
+    def status(self) -> str:
+        # Refresh data to get latest status
+        self.refresh()
+        return self._data["status"]
+
+    @property
+    def type(self) -> str:
+        return self._data["type"]
+
+    @property
+    def payload(self) -> str:
+        return self._data["payload"]
+
+    @property
+    def worker_id(self) -> Optional[str]:
+        return self._data.get("workerId")
+
+    def refresh(self):
+        """Fetches the latest job data from the manager."""
+        self._data = self._client._get(f"/api/v1/jobs/{self.id}")
+
+    def cancel(self) -> 'RemoteJob':
+        """Cancels the job."""
+        self._data = self._client._post(f"/api/v1/jobs/{self.id}/cancel")
+        return self
+
+    def retry(self) -> 'RemoteJob':
+        """Retries the job."""
+        self._data = self._client._post(f"/api/v1/jobs/{self.id}/retry")
+        return self
+
+    def get_logs(self, raw: bool = True, start: Optional[int] = None, length: Optional[int] = None) -> str:
+        """Retrieves job logs."""
+        endpoint = f"/api/v1/logs/jobs/{self.id}/raw" if raw else f"/api/v1/logs/jobs/{self.id}"
+        params = {}
+        if start is not None: params["start"] = start
+        if length is not None: params["length"] = length
+        return self._client._get(endpoint, params=params, is_json=not raw)
+
+    def push_xcom(self, key: str, value: Any):
+        """[PLACEHOLDER] Pushes a value to XCom for this job."""
+        # TODO: Implement in next issue (XCom Management)
+        pass
+
+    def get_xcom(self, key: str) -> Any:
+        """[PLACEHOLDER] Retrieves a value from XCom for this job."""
+        # TODO: Implement in next issue (XCom Management)
+        return None
+
+class RemoteWorkflow:
+    """A wrapper for a workflow that exists on the Fern-OS Manager."""
+    def __init__(self, client: 'FernOSClient', data: Dict[str, Any]):
+        self._client = client
+        self._data = data
+
+    @property
+    def id(self) -> UUID:
+        return UUID(self._data["id"])
+
+    @property
+    def name(self) -> str:
+        return self._data["name"]
+
+    @property
+    def status(self) -> str:
+        self.refresh()
+        return self._data["status"]
+
+    def refresh(self):
+        """Fetches the latest workflow data from the manager."""
+        self._data = self._client._get(f"/api/v1/workflows/{self.id}")
+
+    def execute(self) -> 'RemoteWorkflow':
+        """Starts execution of the workflow."""
+        self._data = self._client._post(f"/api/v1/workflows/{self.id}/execute")
+        return self
+
+    def pause(self) -> 'RemoteWorkflow':
+        """Pauses the workflow."""
+        self._data = self._client._post(f"/api/v1/workflows/{self.id}/pause")
+        return self
+
+    def resume(self) -> 'RemoteWorkflow':
+        """Resumes the workflow."""
+        self._data = self._client._post(f"/api/v1/workflows/{self.id}/resume")
+        return self
+
+    def reset(self) -> 'RemoteWorkflow':
+        """Resets the workflow to DRAFT status."""
+        self._data = self._client._post(f"/api/v1/workflows/{self.id}/reset")
+        return self
+
+    def delete(self):
+        """Deletes the workflow."""
+        self._client._delete(f"/api/v1/workflows/{self.id}")
+
+    def clear_xcom(self):
+        """Clears XCom history for this workflow."""
+        self._client._delete(f"/api/v1/workflows/{self.id}/xcom")
+
+    def get_xcom(self, key: str) -> Any:
+        """[PLACEHOLDER] Retrieves a value from XCom for this workflow."""
+        # TODO: Implement in next issue (XCom Management)
+        return None
+
+    def get_dag_graph(self) -> Dict[str, Any]:
+        """Returns the full DAG graph (nodes and edges)."""
+        return self._client._get(f"/api/v1/workflows/{self.id}/dag")
+
+    def list_jobs(self, page: int = 0, size: int = 100) -> List[RemoteJob]:
+        """Lists all jobs in this workflow using the paginated endpoint."""
+        data = self._client._get(f"/api/v1/workflows/{self.id}/jobs", params={"page": page, "size": size})
+        content = data.get("content", []) if isinstance(data, dict) else []
+        return [RemoteJob(self._client, self.id, j) for j in content]
+
+    def get_job(self, label: str) -> Optional[RemoteJob]:
+        """Retrieves a specific job by its label using the specific workflow-job endpoint."""
+        try:
+            data = self._client._get(f"/api/v1/workflows/{self.id}/jobs/{label}")
+            return RemoteJob(self._client, self.id, data)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    def wait_for_completion(self, timeout_sec: int = 3600, poll_interval: int = 5) -> 'RemoteWorkflow':
+        """Blocks until the workflow reaches a terminal state (COMPLETED, FAILED, CANCELLED)."""
+        start_time = time.time()
+        terminal_states = {"COMPLETED", "FAILED", "CANCELLED"}
+        
+        while time.time() - start_time < timeout_sec:
+            current_status = self.status
+            if current_status in terminal_states:
+                return self
+            time.sleep(poll_interval)
+            
+        raise TimeoutError(f"Workflow {self.id} did not complete within {timeout_sec} seconds.")
+
+class FernOSClient:
+    """Client for interacting with the Fern-OS Manager API."""
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip("/")
+        self.session = requests.Session()
+
+    def _request(self, method, path, params=None, json=None, is_json=True):
+        url = f"{self.base_url}{path}"
+        response = self.session.request(method, url, params=params, json=json)
+        response.raise_for_status()
+        if is_json and response.text:
+            return response.json()
+        return response.text
+
+    def _get(self, path, params=None, is_json=True):
+        return self._request("GET", path, params=params, is_json=is_json)
+
+    def _post(self, path, json=None):
+        return self._request("POST", path, json=json)
+
+    def _put(self, path, json=None):
+        return self._request("PUT", path, json=json)
+
+    def _delete(self, path):
+        return self._request("DELETE", path, is_json=False)
+
+    def register_dag(self, dag: 'DAG', execute: bool = True) -> RemoteWorkflow:
+        """Registers a DAG and optionally starts execution."""
+        data = self._post("/api/v1/workflows", json=dag.to_dict())
+        workflow = RemoteWorkflow(self, data)
+        if execute:
+            workflow.execute()
+        return workflow
+
+    def list_workflows(self, page: int = 0, size: int = 20, status: Optional[str] = None) -> List[RemoteWorkflow]:
+        """Lists workflows."""
+        params: Dict[str, Any] = {"page": page, "size": size}
+        if status: params["status"] = status
+        data = self._get("/api/v1/workflows", params=params)
+        # Spring Page response usually has 'content'
+        content = data.get("content", []) if isinstance(data, dict) else []
+        return [RemoteWorkflow(self, w) for w in content]
+
+    def get_workflow(self, workflow_id: UUID) -> RemoteWorkflow:
+        """Retrieves a workflow by ID."""
+        data = self._get(f"/api/v1/workflows/{workflow_id}")
+        return RemoteWorkflow(self, data)
+
+    def submit_job(self, job: 'Job') -> RemoteJob:
+        """Submits an ad-hoc job."""
+        data = self._post("/api/v1/jobs", json=job.to_dict())
+        # Note: We need a workflow context or a way to handle ad-hoc jobs without a workflow.
+        # Ad-hoc jobs in the manager might still belong to a ghost workflow or have a different structure.
+        # Assuming JobResponse has a workflowId.
+        return RemoteJob(self, UUID(data.get("workflowId", "00000000-0000-0000-0000-000000000000")), data)
+
+    def list_workers(self) -> List[Dict[str, Any]]:
+        """Lists registered workers."""
+        return self._get("/api/v1/workers")
+
+    def get_worker(self, worker_id: UUID) -> Dict[str, Any]:
+        """Retrieves details for a specific worker."""
+        return self._get(f"/api/v1/workers/{worker_id}")

@@ -179,6 +179,20 @@ public class JobService {
         return entityPage.map(this::mapToResponse);
     }
 
+    @Transactional(readOnly = true)
+    public Page<JobResponse> getJobsByWorkflow(UUID workflowId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "dagIndex"));
+        return jobRepository.findByWorkflowId(workflowId, pageable)
+                .map(this::mapToResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public JobResponse getJobByWorkflowAndLabel(UUID workflowId, String label) {
+        return jobRepository.findByWorkflowIdAndJobLabel(workflowId, label)
+                .map(this::mapToResponse)
+                .orElseThrow(() -> new ResourceNotFoundException("Job with label '" + label + "' not found in workflow: " + workflowId));
+    }
+
     @Transactional
     public void retryJob(UUID id) {
         JobEntity entity = jobRepository.findById(id)
@@ -275,6 +289,7 @@ public class JobService {
         return new JobResponse(
                 entity.getId(),
                 entity.getStatus(),
+                entity.getJobLabel(),
                 entity.getPayload(),
                 entity.getResult(),
                 entity.getWorkerId(),
