@@ -6,6 +6,7 @@ import os
 import time
 import requests
 from uuid import UUID
+from .compiler import ScriptPreprocessor
 
 if TYPE_CHECKING:
     from .core import DAG
@@ -70,6 +71,9 @@ class Job:
         seen = set()
         if path:
             seen.add(os.path.abspath(path))
+            
+        if self._type == "python":
+            return ScriptPreprocessor(base_path).process(content)
             
         return self._resolve_includes(content, base_path, seen)
 

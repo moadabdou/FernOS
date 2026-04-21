@@ -1,6 +1,7 @@
 from fernos import xcom
+
 # @fernos_include
-import common_utils.py
+from common_utils import get_storage
 
 def consume():
     print("--- Consumer Operation ---")
