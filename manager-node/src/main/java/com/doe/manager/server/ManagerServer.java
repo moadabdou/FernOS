@@ -22,8 +22,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
-import io.jsonwebtoken.Jwts;
+import com.doe.manager.security.JwtService;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 
 import javax.crypto.SecretKey;
@@ -87,6 +88,7 @@ public class ManagerServer implements SmartLifecycle {
     private volatile boolean running;
     private ServerSocket serverSocket;
     private ScheduledExecutorService monitorExecutor;
+    private final JwtService jwtService;
     private final SecretKey jwtSecretKey;
 
     /**
@@ -105,6 +107,7 @@ public class ManagerServer implements SmartLifecycle {
             JobTimeoutMonitor jobTimeoutMonitor,
             EngineEventListener eventListener,
             XComService xComService,
+            JwtService jwtService,
             List<WorkerDeathListener> workerDeathListeners) {
             
         if (port < 0 || port > 65535) {
@@ -124,6 +127,7 @@ public class ManagerServer implements SmartLifecycle {
         this.jobTimeoutMonitor = jobTimeoutMonitor;
         this.eventListener = eventListener;
         this.xComService = xComService;
+        this.jwtService = jwtService;
         this.jwtSecretKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
         this.defaultWorkerMaxCapacity = defaultWorkerMaxCapacity;
         
@@ -318,13 +322,7 @@ public class ManagerServer implements SmartLifecycle {
 
         UUID workerId;
         try {
-            String subject = Jwts.parser()
-                    .verifyWith(jwtSecretKey)
-                    .build()
-                    .parseSignedClaims(authToken)
-                    .getPayload()
-                    .getSubject();
-            
+            String subject = jwtService.validateAndExtractSubject(authToken);
             workerId = UUID.fromString(subject);
         } catch (JwtException | IllegalArgumentException e) {
             LOG.warn("Registration rejected from {}: invalid auth_token - {}", socket.getRemoteSocketAddress(), e.getMessage());
@@ -759,13 +757,17 @@ public class ManagerServer implements SmartLifecycle {
             }
             
             try {
-                String subject = Jwts.parser()
-                        .verifyWith(jwtSecretKey)
-                        .build()
-                        .parseSignedClaims(authToken)
-                        .getPayload()
-                        .getSubject();
-                jobId = UUID.fromString(subject);
+                String subjectTrace = jwtService.validateAndExtractSubject(authToken);
+                if (subjectTrace.contains(":")) {
+                    String[] parts = subjectTrace.split(":");
+                    if (!"none".equals(parts[0])) {
+                        workflowId = UUID.fromString(parts[0]);
+                    }
+                    jobId = UUID.fromString(parts[1]);
+                } else {
+                    // Fallback for legacy tokens or single-UUID tokens
+                    jobId = UUID.fromString(subjectTrace);
+                }
             } catch (JwtException | IllegalArgumentException e) {
                 throw new IOException("Invalid auth_token", e);
             }

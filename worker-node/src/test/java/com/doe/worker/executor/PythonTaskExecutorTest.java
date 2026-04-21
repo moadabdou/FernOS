@@ -15,7 +15,7 @@ class PythonTaskExecutorTest {
     @Test
     @DisplayName("executes python script and returns success message")
     void execute_script() throws Exception {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", "{\"script\":\"print('hello python')\"}", 10000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", "{\"script\":\"print('hello python')\"}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         String result = plugin.execute(context);
         assertTrue(result.startsWith("Executed successfully in"));
@@ -26,7 +26,7 @@ class PythonTaskExecutorTest {
     @DisplayName("executes python script with arguments")
     void execute_with_args() throws Exception {
         JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", 
-                "{\"script\":\"import sys; print(sys.argv[1])\", \"args\": [\"test_arg\"]}", 10000, 0);
+                "{\"script\":\"import sys; print(sys.argv[1])\", \"args\": [\"test_arg\"]}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         String result = plugin.execute(context);
         assertTrue(result.startsWith("Executed successfully in"));
@@ -37,7 +37,7 @@ class PythonTaskExecutorTest {
     @DisplayName("streams output to context logs")
     void streams_output() throws Exception {
         JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", 
-                "{\"script\":\"print('line1'); print('line2')\"}", 10000, 0);
+                "{\"script\":\"print('line1'); print('line2')\"}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         plugin.execute(context);
         
@@ -48,7 +48,7 @@ class PythonTaskExecutorTest {
     @Test
     @DisplayName("script failure throws Exception")
     void execute_failure() {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", "{\"script\":\"import sys; sys.exit(1)\"}", 10000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", "{\"script\":\"import sys; sys.exit(1)\"}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         assertThrows(IllegalStateException.class, () -> plugin.execute(context));
     }
@@ -56,7 +56,7 @@ class PythonTaskExecutorTest {
     @Test
     @DisplayName("invalid payload throws Exception")
     void validate_invalid() {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", "{}", 10000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", "{}", 10000, 0, null);
         assertThrows(IllegalArgumentException.class, () -> plugin.validate(def));
     }
 
@@ -64,7 +64,7 @@ class PythonTaskExecutorTest {
     @DisplayName("cancel kills the process")
     void cancel_killsProcess() throws Exception {
         JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "python", 
-                "{\"script\":\"import time; time.sleep(10)\"}", 10000, 0);
+                "{\"script\":\"import time; time.sleep(10)\"}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         
         Thread t = new Thread(() -> {

@@ -15,7 +15,7 @@ class EchoPluginTest {
     @Test
     @DisplayName("returns the value of 'data' unchanged")
     void execute_returnsData() throws Exception {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "echo", "{\"data\":\"hello world\"}", 10000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "echo", "{\"data\":\"hello world\"}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         assertEquals("hello world", plugin.execute(context));
     }
@@ -23,7 +23,7 @@ class EchoPluginTest {
     @Test
     @DisplayName("empty string data is returned as-is")
     void execute_emptyData() throws Exception {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "echo", "{\"data\":\"\"}", 10000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "echo", "{\"data\":\"\"}", 10000, 0, null);
         ExecutionContext context = new DefaultExecutionContext(def, null, null, null);
         assertEquals("", plugin.execute(context));
     }

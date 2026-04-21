@@ -43,6 +43,9 @@ public class PythonTaskExecutor implements TaskExecutor {
         // Add environment variables from context
         pb.environment().putAll(context.getEnvVars());
         pb.environment().putAll(context.getSecrets());
+        if (definition.jobToken() != null) {
+            pb.environment().put("FERNOS_JOB_TOKEN", definition.jobToken());
+        }
 
         // Add custom env vars from payload
         if (json.has("env")) {

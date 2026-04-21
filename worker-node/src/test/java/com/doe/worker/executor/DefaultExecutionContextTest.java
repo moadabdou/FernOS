@@ -16,7 +16,7 @@ class DefaultExecutionContextTest {
     @Test
     @DisplayName("log() buffers messages and getBufferedLogs() returns them")
     void log_buffersMessages() {
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0, null);
         DefaultExecutionContext context = new DefaultExecutionContext(def, Collections.emptyMap(), Collections.emptyMap(), null);
         context.log("message 1");
         context.log("message 2");
@@ -31,7 +31,7 @@ class DefaultExecutionContextTest {
     @DisplayName("log() caps logs based on total size")
     void log_capsBySize() {
         // Limit to 20 characters
-        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0);
+        JobDefinition def = new JobDefinition(UUID.randomUUID(), null, "test", "type", "{}", 1000, 0, null);
         DefaultExecutionContext context = new DefaultExecutionContext(
                 def, Collections.emptyMap(), Collections.emptyMap(), null, 20);
         
