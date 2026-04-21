@@ -1,6 +1,8 @@
 from typing import List, Optional, Union, Dict, Any
 import threading
 import json
+import re
+import os
 
 class DAGContext(threading.local):
     """Thread-local storage for the active DAG context."""
@@ -32,18 +34,58 @@ class Job:
             current_dag.add_job(self)
 
     def _resolve_script(self, script: Optional[str], path: Optional[str]) -> str:
-        """Resolves script content from either raw string or file path."""
+        """Resolves script content from either raw string or file path, handling includes."""
+        content = ""
+        base_path = os.getcwd()
+        
         if script:
-            return script
-        if path:
+            content = script
+        elif path:
             try:
-                import os
                 # Try relative to caller's file or absolute
                 with open(path, 'r') as f:
-                    return f.read()
+                    content = f.read()
+                base_path = os.path.dirname(os.path.abspath(path))
             except Exception as e:
                 raise ValueError(f"Failed to read script from path '{path}': {e}")
-        return ""
+        
+        seen = set()
+        if path:
+            seen.add(os.path.abspath(path))
+            
+        return self._resolve_includes(content, base_path, seen)
+
+    def _resolve_includes(self, content: str, base_path: str, seen: Optional[set[str]] = None) -> str:
+        """Recursively resolves # @fernos_include directives."""
+        if seen is None:
+            seen = set()
+
+        # Pattern: # @fernos_include followed by a newline and import path
+        # Using [^\s\n]+ to match the path string
+        pattern = r'#\s*@fernos_include\s*\n\s*import\s+([^\s\n]+)'
+
+        def replacer(match):
+            include_path = match.group(1)
+            # Resolve to absolute path relative to base_path
+            if not os.path.isabs(include_path):
+                abs_include_path = os.path.abspath(os.path.join(base_path, include_path))
+            else:
+                abs_include_path = os.path.abspath(include_path)
+
+            if abs_include_path in seen:
+                return f"# Circular include detected: {include_path}"
+
+            seen.add(abs_include_path)
+
+            try:
+                with open(abs_include_path, 'r') as f:
+                    included_content = f.read()
+                # Recursively resolve includes in the included file
+                return self._resolve_includes(included_content, os.path.dirname(abs_include_path), seen)
+            except Exception as e:
+                return f"# Failed to include {include_path}: {e}"
+
+        return re.sub(pattern, replacer, content)
 
     def _get_payload(self) -> Dict[str, Any]:
         """Subclasses must override this to provide their specific payload."""
