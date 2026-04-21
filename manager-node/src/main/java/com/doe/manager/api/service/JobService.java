@@ -14,6 +14,8 @@ import com.doe.manager.scheduler.DagScheduler;
 import com.doe.manager.scheduler.JobQueue;
 import com.doe.manager.server.ManagerServer;
 import com.doe.manager.workflow.WorkflowManager;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -38,6 +41,7 @@ public class JobService {
     private final WorkflowManager workflowManager;
     private final DagScheduler dagScheduler;
     private final long defaultJobTimeoutMs;
+    private static final Gson GSON = new Gson();
 
     public JobService(JobRepository jobRepository, 
                       JobQueue jobQueue, 
@@ -236,13 +240,32 @@ public class JobService {
     }
 
     @Transactional(readOnly = true)
-    public String getJobLogs(UUID jobId) {
+    public List<String> getJobLogs(UUID jobId, Integer start, Integer length) {
         Path logFile = Paths.get("data", "var", "logs", "jobs", jobId.toString() + ".log");
         if (!Files.exists(logFile)) {
             throw new ResourceNotFoundException("Logs not found for job: " + jobId);
         }
         try {
-            return Files.readString(logFile, StandardCharsets.UTF_8);
+            String rawLogs = Files.readString(logFile, StandardCharsets.UTF_8);
+            List<String> logLines = GSON.fromJson(rawLogs, new TypeToken<List<String>>(){}.getType());
+            
+            if (logLines == null) {
+                return List.of();
+            }
+            
+            int fromIndex = (start != null) ? Math.max(0, start) : 0;
+            if (fromIndex >= logLines.size()) {
+                return List.of();
+            }
+            
+            int toIndex;
+            if (length != null && length > 0) {
+                toIndex = Math.min(fromIndex + length, logLines.size());
+            } else {
+                toIndex = logLines.size();
+            }
+            
+            return logLines.subList(fromIndex, toIndex);
         } catch (IOException e) {
             throw new RuntimeException("Failed to read logs for job: " + jobId, e);
         }
