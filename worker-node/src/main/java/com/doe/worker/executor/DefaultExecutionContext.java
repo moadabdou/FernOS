@@ -61,7 +61,9 @@ public class DefaultExecutionContext implements ExecutionContext {
 
     private Map<String, String> merge(Map<String, String> base, Map<String, String> overrides) {
         Map<String, String> merged = new HashMap<>(base);
-        merged.putAll(overrides);
+        if (overrides != null) {
+            merged.putAll(overrides);
+        }
         return Collections.unmodifiableMap(merged);
     }
 

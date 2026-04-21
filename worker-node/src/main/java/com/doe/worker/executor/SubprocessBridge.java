@@ -106,7 +106,7 @@ public class SubprocessBridge {
         }
     }
 
-    private void writeToStdin(String message) {
+    private synchronized void writeToStdin(String message) {
         try {
             OutputStream os = process.getOutputStream();
             os.write(message.getBytes(StandardCharsets.UTF_8));
