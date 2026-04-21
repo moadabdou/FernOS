@@ -264,7 +264,7 @@ class WorkflowControllerTest {
         UUID workflowId = UUID.randomUUID();
         JobResponse job = new JobResponse(
                 UUID.randomUUID(), JobStatus.PENDING, "payload", null,
-                null, workflowId, 0, Instant.now(), Instant.now()
+                null, workflowId, workflowId, 0, Instant.now(), Instant.now()
         );
         Page<JobResponse> page = new PageImpl<>(List.of(job), PageRequest.of(0, 20), 1);
         Mockito.when(jobService.getJobsByWorkflow(workflowId, 0, 20)).thenReturn(page);
@@ -283,7 +283,7 @@ class WorkflowControllerTest {
         String label = "task-A";
         JobResponse job = new JobResponse(
                 UUID.randomUUID(), JobStatus.RUNNING, "payload", null,
-                null, workflowId, 0, Instant.now(), Instant.now()
+                null, workflowId, workflowId, 0, Instant.now(), Instant.now()
         );
         Mockito.when(jobService.getJobByWorkflowAndLabel(workflowId, label)).thenReturn(job);
 

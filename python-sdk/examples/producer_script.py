@@ -1,7 +1,10 @@
 import io
 from fernos import xcom
+
+
 # @fernos_include
 import common_utils.py
+
 
 def produce():
     print("--- Producer Operation ---")
