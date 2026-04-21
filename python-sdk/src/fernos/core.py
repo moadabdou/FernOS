@@ -326,16 +326,6 @@ class RemoteJob:
         if length is not None: params["length"] = length
         return self._client._get(endpoint, params=params, is_json=not raw)
 
-    def push_xcom(self, key: str, value: Any):
-        """[PLACEHOLDER] Pushes a value to XCom for this job."""
-        # TODO: Implement in next issue (XCom Management)
-        pass
-
-    def get_xcom(self, key: str) -> Any:
-        """[PLACEHOLDER] Retrieves a value from XCom for this job."""
-        # TODO: Implement in next issue (XCom Management)
-        return None
-
 class RemoteWorkflow:
     """A wrapper for a workflow that exists on the Fern-OS Manager."""
     def __init__(self, client: 'FernOSClient', data: Dict[str, Any]):
