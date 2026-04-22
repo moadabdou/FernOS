@@ -44,6 +44,9 @@ Thank you for your interest in contributing to Fern-OS! This document outlines t
 
 ### First-Time Setup
 
+> [!NOTE]
+> For a more comprehensive guide on setting up the cluster and environment variables, see the [**Project Setup Documentation**](docs/setup/index.md).
+
 ```bash
 # 1. Copy environment config
 cp .env.example .env
@@ -274,14 +277,14 @@ python automated_tests/test_sleep_jobs.py
 | `engine-core` has zero Spring dependencies | Must be usable by any Java application |
 | `worker-node` has zero Spring dependencies | Must stay lightweight and fast |
 | `manager-node` depends on `engine-core` | Shares domain models and protocol |
-| `dashboard` is independent of Java modules | Communicates only via HTTP REST |
+| `dashboard` is independent of Java modules | Communicates only via HTTP REST (see [Dashboard Docs](docs/ui/index.md)) |
 
 ### Adding Dependencies
 
 - **engine-core**: Avoid new dependencies. Only `gson`, `slf4j`, and `junit` are acceptable.
 - **manager-node**: Spring Boot ecosystem only, unless approved in a PR discussion.
 - **worker-node**: Minimal. Only `gson`, `slf4j`, and `junit`.
-- **dashboard**: Discuss in PR. Prefer established, well-maintained libraries.
+- **dashboard**: Discuss in PR. Prefer established, well-maintained libraries. See [UI Architecture](docs/ui/index.md) for more info.
 
 ### Protocol Changes
 
