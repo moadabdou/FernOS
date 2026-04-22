@@ -8,8 +8,7 @@ The fastest way to get started is using Docker Compose.
 
 1. **Clone the repository**:
    ```bash
-   git clone <repository-url>
-   cd distributed_orchestration_engine
+   git clone https://github.com/moadabdou/FernOS.git&& cd FernOS
    ```
 
 2. **Configure Environment**:

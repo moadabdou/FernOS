@@ -108,7 +108,7 @@ Get a fully operational cluster in **3 commands**:
 
 ```bash
 # 1. Clone and enter the project
-git clone <repo-url> && cd distributed_orchestration_engine
+git clone https://github.com/moadabdou/FernOS.git&& cd FernOS
 
 # 2. Copy environment config
 cp .env.example .env
