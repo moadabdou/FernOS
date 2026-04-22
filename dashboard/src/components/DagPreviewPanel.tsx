@@ -171,11 +171,11 @@ const DagPreviewPanel: React.FC<DagPreviewPanelProps> = ({ workflowId }) => {
       source: e.sourceJobId,
       target: e.targetJobId,
       type: 'smoothstep',
-      animated: false,
+      animated: true,
       style: { 
-        stroke: 'rgba(148, 163, 184, 0.4)', 
-        strokeWidth: 1.5,
-        strokeDasharray: '5,5'
+        stroke: 'rgba(167, 139, 250, 0.6)', 
+        strokeWidth: 2,
+        strokeDasharray: '6,4'
       },
     })) : [];
 

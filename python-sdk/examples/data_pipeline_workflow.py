@@ -5,41 +5,37 @@ def create_data_pipeline_workflow():
     # Define a unique workflow name
     dag = DAG("producer_consumer_pipeline_v1")
 
-    # Define the 3 jobs
-    # We use PythonJob which points to the scripts we just created
-    
-    # 1. Generator - The Producer
-    generator = PythonJob(
-        label="generator",
-        script_path="data_pipeline/generator.py",
-        timeout_ms=300000 # 5 minutes
-    )
+    with dag:
+        # Define the 3 jobs
+        # 1. Generator - The Producer
+        generator = PythonJob(
+            label="generator",
+            script_path="data_pipeline/generator.py",
+            timeout_ms=300000 # 5 minutes
+        )
 
-    # 2. Transformer - The Processor
-    transformer = PythonJob(
-        label="transformer",
-        script_path="data_pipeline/transformer.py",
-        timeout_ms=300000
-    )
+        # 2. Transformer - The Processor
+        transformer = PythonJob(
+            label="transformer",
+            script_path="data_pipeline/transformer.py",
+            timeout_ms=300000
+        )
 
-    # 3. Loader - The Consumer
-    loader = PythonJob(
-        label="loader",
-        script_path="data_pipeline/loader.py",
-        timeout_ms=300000
-    )
+        # 3. Loader - The Consumer
+        loader = PythonJob(
+            label="loader",
+            script_path="data_pipeline/loader.py",
+            timeout_ms=300000
+        )
 
+        # In this event-driven pipeline, jobs communicate via signaling (Data Flow).
+        # We define these relationships using the <= operator or .signals() method.
+        transformer <= generator
+        loader <= transformer
 
-    # In this event-driven pipeline, there are no strict DAG dependencies 
-    # in terms of "Execution Order" because they need to be active together.
-    # However, we can just add them to the DAG.
-    dag.add_job(generator)
-    dag.add_job(transformer)
-    dag.add_job(loader)
-
-    # Note: In Fern-OS, if jobs have no dependencies, they start as soon 
-    # as capacity is available. In this example, they will all start 
-    # and communicate via the event system.
+    # Note: In Fern-OS, if jobs have no control dependencies (>>), they can 
+    # start as soon as capacity is available. The signaling edges (Data Flow)
+    # provide a visual representation of how data flows through the pipeline.
 
     return dag
 
